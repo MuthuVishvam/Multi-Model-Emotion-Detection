@@ -1,11 +1,11 @@
-﻿from fastapi import FastAPI
+﻿from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from ml_service.predictor import DummyTextEmotionPredictor
+from ml_service.predictor import TextEmotionPredictor
 
 
-app = FastAPI(title="ML Placeholder API")
-predictor = DummyTextEmotionPredictor()
+app = FastAPI(title="ML Text Emotion API")
+predictor = TextEmotionPredictor()
 
 
 class PredictRequest(BaseModel):
@@ -19,6 +19,7 @@ async def health() -> dict:
 
 @app.post("/predict_text")
 async def predict_text(payload: PredictRequest) -> dict:
-    probs = predictor.predict(payload.text)
-    top_emotion = max(probs, key=probs.get)
-    return {"top_emotion": top_emotion, "probabilities": probs}
+    try:
+        return predictor.predict(payload.text)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
