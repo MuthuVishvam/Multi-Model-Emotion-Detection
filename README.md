@@ -1,4 +1,25 @@
-﻿# Final-Year Project Step 3 (MongoDB + Lessons)
+﻿# Final-Year Project Step 4 (Compass + Lesson CRUD + One Command Run)
+
+## Commands (exact)
+
+```bash
+copy backend\.env.template backend\.env
+cd backend
+python -m db.init_mongo
+python -m db.seed_demo
+cd ..
+.\run_dev.ps1
+```
+
+Open:
+
+- Frontend: `http://localhost:5173`
+- Backend docs: `http://localhost:8000/docs`
+
+Look for `DB connected` in backend logs and verify `emotion_platform` in MongoDB Compass.
+
+---
+# Final-Year Project Step 3 (MongoDB + Lessons)
 
 ## Exact Commands
 
@@ -334,6 +355,7 @@ Please cite the following papers if you find this dataset useful in your researc
 S. Zahiri and J. D. Choi. Emotion Detection on TV Show Transcripts with Sequence-based Convolutional Neural Networks. In The AAAI Workshop on Affective Content Analysis, AFFCON'18, 2018.
 
 S. Poria, D. Hazarika, N. Majumder, G. Naik, E. Cambria, R. Mihalcea. MELD: A Multimodal Multi-Party Dataset for Emotion Recognition in Conversation. ACL 2019.
+
 
 
 

@@ -1,109 +1,68 @@
-﻿# Step 3: MongoDB Setup + Lessons API
+﻿# Step 4: MongoDB Compass + Lesson CRUD + One Command Run
 
-## Environment (`backend/.env`)
+## 1) Backend environment
 
-Use this template from `backend/.env.example`:
+Create `backend/.env` from template:
+
+```bash
+copy backend\.env.template backend\.env
+```
+
+Required values:
 
 ```env
-PYTHONPATH=.
 MONGO_URI=mongodb://localhost:27017
 DB_NAME=emotion_platform
-JWT_SECRET=change_me
-CORS_ORIGINS=["http://localhost:5173"]
-MODEL_ARTIFACT_PATH=../ml/artifacts/text_emotion_model.joblib
+JWT_SECRET=your_secret
 ```
 
-## Option 1: Local MongoDB installation
-
-1. Install MongoDB Community Server.
-2. Start MongoDB service (`mongod`) on default port `27017`.
-3. Verify:
-
-```bash
-mongosh --eval "db.runCommand({ ping: 1 })"
-```
-
-## Option 2: Docker MongoDB
-
-From repository root:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d mongodb
-```
-
-## Initialize schema + indexes
+## 2) Initialize DB schema and seed data
 
 From `backend/`:
 
 ```bash
 python -m db.init_mongo
-```
-
-This creates validators and indexes for:
-
-- `users` (unique `email`)
-- `sessions` (`created_by`, `created_at`)
-- `emotion_logs` (`session_id`, `created_at`) and (`student_id`)
-- `lessons` (`created_by`, `created_at`)
-
-## Seed demo data
-
-From `backend/`:
-
-```bash
 python -m db.seed_demo
 ```
 
-Seeded:
+## 3) One command start (Windows)
 
-- Teacher: `teacher@test.com` / `123456`
-- Students: `student1@test.com`, `student2@test.com`
-- 1 demo session
-- 15 demo emotion logs
-- 2 sample lessons
-
-## Run backend
-
-From `backend/`:
+From project root:
 
 ```bash
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+.\run_dev.ps1
 ```
 
-## Quick test flow
+This launches:
 
-1. Login as teacher:
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:5173`
+
+Alternative Docker startup:
 
 ```bash
-curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d '{"email":"teacher@test.com","password":"123456"}'
+docker compose -f docker/docker-compose.yml --profile frontend up --build
 ```
 
-2. Create lesson (teacher-only):
+## 4) Verify Compass + backend connection
 
-```bash
-curl -X POST http://localhost:8000/lessons -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"title":"Week 1","description":"Intro","content":"Emotion AI basics"}'
-```
+- Check backend terminal for log: `DB connected`
+- In MongoDB Compass, open DB `emotion_platform`
+- Confirm collections: `users`, `sessions`, `emotion_logs`, `lessons`
+- Insert flow: post `/emotion/predict_text` and confirm new document in `emotion_logs`
 
-3. Start session:
+## 5) Lesson CRUD endpoints
 
-```bash
-curl -X POST http://localhost:8000/sessions/start -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"session_name":"Live Class"}'
-```
+- `POST /lessons` (teacher only)
+- `GET /lessons`
+- `GET /lessons/{id}`
+- `DELETE /lessons/{id}` (teacher only)
 
-4. Predict text (stores in `emotion_logs`):
+Stored lesson fields:
 
-```bash
-curl -X POST http://localhost:8000/emotion/predict_text -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"session_id":"<SESSION_ID>","student_id":"student1@test.com","text":"I understand this now"}'
-```
-
-5. Verify logs inserted:
-
-```bash
-mongosh --eval "use emotion_platform; db.emotion_logs.find().limit(3).pretty()"
-```
-
-6. Open dashboard summary:
-
-```bash
-curl -H "Authorization: Bearer <TOKEN>" "http://localhost:8000/dashboard/summary?session_id=<SESSION_ID>"
-```
+- `lesson_id`
+- `title`
+- `description`
+- `content`
+- `created_by`
+- `created_at`

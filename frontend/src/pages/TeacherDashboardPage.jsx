@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -20,6 +20,8 @@ export default function TeacherDashboardPage() {
   const [sessionId, setSessionId] = useState("");
   const [summary, setSummary] = useState(null);
   const [message, setMessage] = useState("");
+  const [lessons, setLessons] = useState([]);
+  const [lessonForm, setLessonForm] = useState({ title: "", description: "", content: "" });
 
   const distributionData = useMemo(() => {
     if (!summary) {
@@ -47,6 +49,39 @@ export default function TeacherDashboardPage() {
     }
   }
 
+  async function loadLessons() {
+    const token = localStorage.getItem("token") || "";
+    try {
+      const data = await apiRequest("/lessons", "GET", null, token);
+      setLessons(data);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function createLesson() {
+    const token = localStorage.getItem("token") || "";
+    try {
+      await apiRequest("/lessons", "POST", lessonForm, token);
+      setLessonForm({ title: "", description: "", content: "" });
+      setMessage("Lesson created.");
+      await loadLessons();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function deleteLesson(lessonId) {
+    const token = localStorage.getItem("token") || "";
+    try {
+      await apiRequest(`/lessons/${lessonId}`, "DELETE", null, token);
+      setMessage("Lesson deleted.");
+      await loadLessons();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
   async function downloadCsv() {
     const token = localStorage.getItem("token") || "";
     try {
@@ -69,6 +104,10 @@ export default function TeacherDashboardPage() {
       setMessage(error.message);
     }
   }
+
+  useEffect(() => {
+    loadLessons();
+  }, []);
 
   return (
     <div className="card">
@@ -151,7 +190,52 @@ export default function TeacherDashboardPage() {
           </div>
         </>
       )}
+
+      <div className="chart-card">
+        <h3>Lessons</h3>
+        <label>Title</label>
+        <input
+          value={lessonForm.title}
+          onChange={(event) => setLessonForm({ ...lessonForm, title: event.target.value })}
+        />
+        <label>Description</label>
+        <input
+          value={lessonForm.description}
+          onChange={(event) => setLessonForm({ ...lessonForm, description: event.target.value })}
+        />
+        <label>Content</label>
+        <input
+          value={lessonForm.content}
+          onChange={(event) => setLessonForm({ ...lessonForm, content: event.target.value })}
+        />
+        <button onClick={createLesson}>Create Lesson</button>
+        <button className="secondary" onClick={loadLessons}>Refresh Lessons</button>
+
+        <table className="student-table lessons-table">
+          <thead>
+            <tr>
+              <th>Lesson ID</th>
+              <th>Title</th>
+              <th>Created By</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lessons.map((lesson) => (
+              <tr key={lesson.lesson_id}>
+                <td>{lesson.lesson_id}</td>
+                <td>{lesson.title}</td>
+                <td>{lesson.created_by}</td>
+                <td>
+                  <button className="danger" onClick={() => deleteLesson(lesson.lesson_id)}>
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
-

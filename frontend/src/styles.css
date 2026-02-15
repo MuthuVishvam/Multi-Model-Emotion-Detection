@@ -48,6 +48,10 @@ button.secondary {
   background: #6b7280;
 }
 
+button.danger {
+  background: #b91c1c;
+}
+
 nav {
   display: flex;
   gap: 8px;
@@ -96,6 +100,10 @@ nav a {
   border-bottom: 1px solid #e5e7eb;
   padding: 8px;
   text-align: left;
+}
+
+.lessons-table button {
+  margin-top: 0;
 }
 
 .result-panel {
