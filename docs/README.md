@@ -1,60 +1,109 @@
-﻿# AI Emotion Detection MVP (Step 2)
+﻿# Step 3: MongoDB Setup + Lessons API
 
-## What is implemented
+## Environment (`backend/.env`)
 
-- Text emotion classifier pipeline (TF-IDF + Logistic Regression) with train/predict/evaluate scripts.
-- Backend prediction endpoint: `POST /emotion/predict_text` (stores every prediction in MongoDB `emotion_logs`).
-- Dashboard analytics endpoints:
-  - `GET /dashboard/summary?session_id=...`
-  - `GET /dashboard/student?session_id=...&student_id=...`
-  - `GET /dashboard/export_csv?session_id=...`
-- Frontend student flow: submit text and see predicted emotion.
-- Frontend teacher dashboard: bar chart, pie chart, timeline line chart, student table, CSV download.
+Use this template from `backend/.env.example`:
 
-## 1) Train model (one command)
+```env
+PYTHONPATH=.
+MONGO_URI=mongodb://localhost:27017
+DB_NAME=emotion_platform
+JWT_SECRET=change_me
+CORS_ORIGINS=["http://localhost:5173"]
+MODEL_ARTIFACT_PATH=../ml/artifacts/text_emotion_model.joblib
+```
+
+## Option 1: Local MongoDB installation
+
+1. Install MongoDB Community Server.
+2. Start MongoDB service (`mongod`) on default port `27017`.
+3. Verify:
+
+```bash
+mongosh --eval "db.runCommand({ ping: 1 })"
+```
+
+## Option 2: Docker MongoDB
 
 From repository root:
 
 ```bash
-python ml/train_text.py --dataset data/sample_emotions.csv --output ml/artifacts/text_emotion_model.joblib
+docker compose -f docker/docker-compose.yml up -d mongodb
 ```
 
-Optional checks:
+## Initialize schema + indexes
+
+From `backend/`:
 
 ```bash
-python ml/evaluate_text.py --model ml/artifacts/text_emotion_model.joblib --dataset data/sample_emotions.csv
-python ml/predict_text.py --model ml/artifacts/text_emotion_model.joblib --text "I am happy with this class"
+python -m db.init_mongo
 ```
 
-## 2) Run backend + DB + frontend
+This creates validators and indexes for:
+
+- `users` (unique `email`)
+- `sessions` (`created_by`, `created_at`)
+- `emotion_logs` (`session_id`, `created_at`) and (`student_id`)
+- `lessons` (`created_by`, `created_at`)
+
+## Seed demo data
+
+From `backend/`:
 
 ```bash
-docker compose -f docker/docker-compose.yml --profile frontend up --build
+python -m db.seed_demo
 ```
 
-Service URLs:
+Seeded:
 
-- Backend: `http://localhost:8000`
-- Frontend: `http://localhost:5173`
-- MongoDB: `mongodb://localhost:27017`
+- Teacher: `teacher@test.com` / `123456`
+- Students: `student1@test.com`, `student2@test.com`
+- 1 demo session
+- 15 demo emotion logs
+- 2 sample lessons
 
-## 3) Test flow end-to-end
+## Run backend
 
-1. Open `http://localhost:5173` and register/login.
-2. In Student Session page, click `Start Session`.
-3. Enter `Session ID`, `Student ID`, and text utterance.
-4. Click `Submit Text` to get emotion prediction.
-5. Open Teacher Dashboard page with same `Session ID` and click `Load Summary`.
-6. Use `Download CSV` to export session logs.
-
-## 4) Backend tests
+From `backend/`:
 
 ```bash
-cd backend
-pytest -q
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Covers:
+## Quick test flow
 
-- `/health`
-- `/emotion/predict_text` (with DB + predictor mocked)
+1. Login as teacher:
+
+```bash
+curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d '{"email":"teacher@test.com","password":"123456"}'
+```
+
+2. Create lesson (teacher-only):
+
+```bash
+curl -X POST http://localhost:8000/lessons -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"title":"Week 1","description":"Intro","content":"Emotion AI basics"}'
+```
+
+3. Start session:
+
+```bash
+curl -X POST http://localhost:8000/sessions/start -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"session_name":"Live Class"}'
+```
+
+4. Predict text (stores in `emotion_logs`):
+
+```bash
+curl -X POST http://localhost:8000/emotion/predict_text -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{"session_id":"<SESSION_ID>","student_id":"student1@test.com","text":"I understand this now"}'
+```
+
+5. Verify logs inserted:
+
+```bash
+mongosh --eval "use emotion_platform; db.emotion_logs.find().limit(3).pretty()"
+```
+
+6. Open dashboard summary:
+
+```bash
+curl -H "Authorization: Bearer <TOKEN>" "http://localhost:8000/dashboard/summary?session_id=<SESSION_ID>"
+```
