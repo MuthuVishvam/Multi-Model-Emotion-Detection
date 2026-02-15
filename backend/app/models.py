@@ -75,7 +75,7 @@ class LessonCreateRequest(BaseModel):
 
 
 class LessonResponse(BaseModel):
-    id: str
+    lesson_id: str
     title: str
     description: str
     content: str

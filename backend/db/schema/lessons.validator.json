@@ -1,8 +1,9 @@
 ﻿{
   "$jsonSchema": {
     "bsonType": "object",
-    "required": ["title", "description", "content", "created_by", "created_at"],
+    "required": ["lesson_id", "title", "description", "content", "created_by", "created_at"],
     "properties": {
+      "lesson_id": {"bsonType": "string"},
       "title": {"bsonType": "string"},
       "description": {"bsonType": "string"},
       "content": {"bsonType": "string"},

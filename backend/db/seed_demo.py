@@ -91,6 +91,9 @@ def seed_lessons(db, teacher_email: str) -> None:
     for lesson in lessons:
         existing = db.lessons.find_one({"title": lesson["title"], "created_by": teacher_email})
         if not existing:
+            lesson_id = ObjectId()
+            lesson["_id"] = lesson_id
+            lesson["lesson_id"] = str(lesson_id)
             db.lessons.insert_one(lesson)
 
 
@@ -107,7 +110,7 @@ def main() -> None:
     seed_lessons(db, teacher["email"])
 
     print("Demo seed complete")
-    print(f"Teacher: teacher@test.com / 123456")
+    print("Teacher: teacher@test.com / 123456")
     print(f"Session ID: {session_id}")
 
 

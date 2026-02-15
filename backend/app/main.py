@@ -9,6 +9,7 @@ from app.routers import auth, dashboard, emotion, health, lessons, sessions
 from db.mongo import close_mongo_connection, init_mongo_connection, ping_database
 
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("emotion_backend")
 
 
@@ -16,12 +17,12 @@ logger = logging.getLogger("emotion_backend")
 async def lifespan(app: FastAPI):
     init_mongo_connection()
     await ping_database()
-    logger.info("MongoDB connection established")
+    logger.info("DB connected")
     try:
         yield
     finally:
         await close_mongo_connection()
-        logger.info("MongoDB connection closed")
+        logger.info("DB disconnected")
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
