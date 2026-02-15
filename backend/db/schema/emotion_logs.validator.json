@@ -1,0 +1,14 @@
+﻿{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["session_id", "student_id", "text", "emotion", "scores", "created_at"],
+    "properties": {
+      "session_id": {"bsonType": "string"},
+      "student_id": {"bsonType": "string"},
+      "text": {"bsonType": "string"},
+      "emotion": {"bsonType": "string"},
+      "scores": {"bsonType": "object"},
+      "created_at": {"bsonType": "date"}
+    }
+  }
+}

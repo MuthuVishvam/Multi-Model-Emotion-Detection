@@ -1,4 +1,4 @@
-﻿from datetime import timedelta
+﻿from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -20,6 +20,7 @@ async def register(payload: UserRegister) -> TokenResponse:
         "email": payload.email,
         "password_hash": get_password_hash(payload.password),
         "role": payload.role,
+        "created_at": datetime.now(timezone.utc),
     }
     await db.users.insert_one(user_doc)
 

@@ -29,7 +29,7 @@ class SessionStartResponse(BaseModel):
     id: str
     session_name: str
     course: Optional[str] = None
-    started_by: str
+    created_by: str
     created_at: datetime
 
 
@@ -66,3 +66,18 @@ class StudentDashboardResponse(BaseModel):
     student_id: str
     timeline: dict[str, int]
     emotion_distribution: dict[str, int]
+
+
+class LessonCreateRequest(BaseModel):
+    title: str
+    description: str
+    content: str
+
+
+class LessonResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    content: str
+    created_by: str
+    created_at: datetime

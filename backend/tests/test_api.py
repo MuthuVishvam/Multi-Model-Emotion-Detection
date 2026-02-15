@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+import app.main as main_module
 from app.dependencies import get_current_user
 from app.main import app
 from app.routers import dashboard, emotion, sessions
@@ -65,6 +66,16 @@ class FakeDB:
         self.users = FakeCollection()
         self.sessions = FakeCollection()
         self.emotion_logs = FakeCollection()
+        self.lessons = FakeCollection()
+
+
+def patch_lifespan_db(monkeypatch):
+    async def noop_async():
+        return None
+
+    monkeypatch.setattr(main_module, "init_mongo_connection", lambda: None)
+    monkeypatch.setattr(main_module, "ping_database", noop_async)
+    monkeypatch.setattr(main_module, "close_mongo_connection", noop_async)
 
 
 def setup_fake_db():
@@ -75,7 +86,7 @@ def setup_fake_db():
         {
             "_id": session_id,
             "session_name": "Test Session",
-            "started_by": "teacher@example.com",
+            "created_by": "teacher@example.com",
             "created_at": datetime.now(timezone.utc),
         }
     )
@@ -87,14 +98,16 @@ def setup_fake_db():
     return fake_db, str(session_id)
 
 
-def test_health_endpoint():
-    client = TestClient(app)
-    response = client.get("/health")
+def test_health_endpoint(monkeypatch):
+    patch_lifespan_db(monkeypatch)
+    with TestClient(app) as client:
+        response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
 def test_predict_text_endpoint_stores_log(monkeypatch):
+    patch_lifespan_db(monkeypatch)
     fake_db, session_id = setup_fake_db()
 
     def fake_predict(text: str):
@@ -104,15 +117,15 @@ def test_predict_text_endpoint_stores_log(monkeypatch):
 
     app.dependency_overrides[get_current_user] = lambda: {"email": "teacher@example.com"}
 
-    client = TestClient(app)
-    response = client.post(
-        "/emotion/predict_text",
-        json={
-            "session_id": session_id,
-            "student_id": "student-1",
-            "text": "I am happy",
-        },
-    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/emotion/predict_text",
+            json={
+                "session_id": session_id,
+                "student_id": "student-1",
+                "text": "I am happy",
+            },
+        )
 
     assert response.status_code == 200
     payload = response.json()

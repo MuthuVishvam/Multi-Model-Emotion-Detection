@@ -20,7 +20,7 @@ async def start_session(
     session_doc = {
         "session_name": payload.session_name,
         "course": payload.course,
-        "started_by": current_user["email"],
+        "created_by": current_user["email"],
         "created_at": now,
     }
     result = await db.sessions.insert_one(session_doc)

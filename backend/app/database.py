@@ -1,7 +1,9 @@
-﻿from motor.motor_asyncio import AsyncIOMotorClient
-
-from app.config import settings
+﻿from db.mongo import collections
 
 
-client = AsyncIOMotorClient(settings.mongodb_uri)
-db = client[settings.mongodb_db_name]
+class DatabaseProxy:
+    def __getattr__(self, item: str):
+        return getattr(collections, item)
+
+
+db = DatabaseProxy()

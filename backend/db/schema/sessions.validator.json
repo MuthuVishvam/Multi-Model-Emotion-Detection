@@ -1,0 +1,12 @@
+﻿{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["session_name", "created_by", "created_at"],
+    "properties": {
+      "session_name": {"bsonType": "string"},
+      "course": {"bsonType": ["string", "null"]},
+      "created_by": {"bsonType": "string"},
+      "created_at": {"bsonType": "date"}
+    }
+  }
+}
