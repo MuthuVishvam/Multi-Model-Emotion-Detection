@@ -1,0 +1,52 @@
+﻿services:
+  mongodb:
+    image: mongo:7
+    container_name: emotion_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: emotion_backend
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB_NAME: emotion_app
+      SECRET_KEY: dev-secret-change-me
+      CORS_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongodb
+
+  ml:
+    build:
+      context: ../ml
+      dockerfile: Dockerfile
+    container_name: emotion_ml
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: emotion_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    profiles:
+      - frontend
+
+volumes:
+  mongo_data:
