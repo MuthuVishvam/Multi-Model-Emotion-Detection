@@ -19,6 +19,9 @@
       MONGODB_DB_NAME: emotion_app
       SECRET_KEY: dev-secret-change-me
       CORS_ORIGINS: '["http://localhost:5173"]'
+      MODEL_ARTIFACT_PATH: /artifacts/text_emotion_model.joblib
+    volumes:
+      - ../ml/artifacts:/artifacts:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -32,6 +35,8 @@
     restart: unless-stopped
     ports:
       - "8001:8001"
+    volumes:
+      - ../ml/artifacts:/app/artifacts
 
   frontend:
     build:

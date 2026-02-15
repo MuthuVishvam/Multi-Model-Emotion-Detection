@@ -1,14 +1,23 @@
-﻿import { useState } from "react";
+﻿import { useMemo, useState } from "react";
 
 import { apiRequest } from "../api";
 
 export default function StudentSessionPage() {
   const [sessionName, setSessionName] = useState("Online Class A");
   const [sessionId, setSessionId] = useState("");
-  const [userId, setUserId] = useState("student-1");
+  const [studentId, setStudentId] = useState("student-1");
   const [text, setText] = useState("I understand this concept now.");
-  const [emotion, setEmotion] = useState("joy");
+  const [result, setResult] = useState(null);
   const [message, setMessage] = useState("");
+
+  const topScores = useMemo(() => {
+    if (!result?.scores) {
+      return [];
+    }
+    return Object.entries(result.scores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [result]);
 
   async function startSession() {
     const token = localStorage.getItem("token") || "";
@@ -21,22 +30,20 @@ export default function StudentSessionPage() {
     }
   }
 
-  async function logEmotion() {
+  async function submitUtterance() {
     const token = localStorage.getItem("token") || "";
     try {
-      await apiRequest(`/sessions/${sessionId}/log_emotion`, "POST", {
-        user_id: userId,
-        text,
-        emotion,
-        probabilities: {
-          joy: emotion === "joy" ? 0.7 : 0.1,
-          neutral: emotion === "neutral" ? 0.7 : 0.1,
-          sadness: emotion === "sadness" ? 0.7 : 0.1,
-        },
-      }, token);
-      setMessage("Emotion logged.");
+      const data = await apiRequest(
+        "/emotion/predict_text",
+        "POST",
+        { session_id: sessionId, student_id: studentId, text },
+        token
+      );
+      setResult(data);
+      setMessage("Emotion predicted and stored.");
     } catch (error) {
       setMessage(error.message);
+      setResult(null);
     }
   }
 
@@ -50,22 +57,31 @@ export default function StudentSessionPage() {
       <label>Session ID</label>
       <input value={sessionId} onChange={(event) => setSessionId(event.target.value)} />
 
-      <label>User ID</label>
-      <input value={userId} onChange={(event) => setUserId(event.target.value)} />
+      <label>Student ID</label>
+      <input value={studentId} onChange={(event) => setStudentId(event.target.value)} />
 
       <label>Text</label>
       <input value={text} onChange={(event) => setText(event.target.value)} />
 
-      <label>Emotion</label>
-      <select value={emotion} onChange={(event) => setEmotion(event.target.value)}>
-        <option value="joy">joy</option>
-        <option value="neutral">neutral</option>
-        <option value="sadness">sadness</option>
-        <option value="anger">anger</option>
-      </select>
-
-      <button onClick={logEmotion}>Log Emotion</button>
+      <button onClick={submitUtterance}>Submit Text</button>
       <p>{message}</p>
+
+      {result && (
+        <div className="result-panel">
+          <p>
+            Detected Emotion: <strong>{result.emotion}</strong>
+          </p>
+          <p>Timestamp: {new Date(result.timestamp).toLocaleString()}</p>
+          <p>Top Scores:</p>
+          <ul>
+            {topScores.map(([emotion, score]) => (
+              <li key={emotion}>
+                {emotion}: {(score * 100).toFixed(1)}%
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

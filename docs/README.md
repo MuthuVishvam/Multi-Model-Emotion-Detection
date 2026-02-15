@@ -1,44 +1,60 @@
-﻿# Step 1 Scaffold Documentation
+﻿# AI Emotion Detection MVP (Step 2)
 
-## Folder Structure
+## What is implemented
 
-- `backend/`: FastAPI app with auth, sessions, dashboard, and health endpoints.
-- `frontend/`: React + Vite UI with Login, Student Session, Teacher Dashboard pages.
-- `ml/`: PyTorch dummy text emotion predictor and a placeholder model API.
-- `docs/`: Project documentation.
-- `docker/`: Docker Compose stack definitions.
+- Text emotion classifier pipeline (TF-IDF + Logistic Regression) with train/predict/evaluate scripts.
+- Backend prediction endpoint: `POST /emotion/predict_text` (stores every prediction in MongoDB `emotion_logs`).
+- Dashboard analytics endpoints:
+  - `GET /dashboard/summary?session_id=...`
+  - `GET /dashboard/student?session_id=...&student_id=...`
+  - `GET /dashboard/export_csv?session_id=...`
+- Frontend student flow: submit text and see predicted emotion.
+- Frontend teacher dashboard: bar chart, pie chart, timeline line chart, student table, CSV download.
 
-## Backend Endpoints
-
-- `GET /health`
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /sessions/start`
-- `POST /sessions/{id}/log_emotion`
-- `GET /dashboard/summary?session_id=...`
-
-## ML Placeholder Endpoints
-
-- `GET /health`
-- `POST /predict_text`
-
-## One-Command Run
+## 1) Train model (one command)
 
 From repository root:
 
 ```bash
-docker compose -f docker/docker-compose.yml up --build
+python ml/train_text.py --dataset data/sample_emotions.csv --output ml/artifacts/text_emotion_model.joblib
 ```
 
-With frontend enabled:
+Optional checks:
+
+```bash
+python ml/evaluate_text.py --model ml/artifacts/text_emotion_model.joblib --dataset data/sample_emotions.csv
+python ml/predict_text.py --model ml/artifacts/text_emotion_model.joblib --text "I am happy with this class"
+```
+
+## 2) Run backend + DB + frontend
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile frontend up --build
 ```
 
-## Service URLs
+Service URLs:
 
-- Backend API: `http://localhost:8000`
-- Frontend: `http://localhost:5173` (when profile `frontend` is enabled)
-- ML API: `http://localhost:8001`
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:5173`
 - MongoDB: `mongodb://localhost:27017`
+
+## 3) Test flow end-to-end
+
+1. Open `http://localhost:5173` and register/login.
+2. In Student Session page, click `Start Session`.
+3. Enter `Session ID`, `Student ID`, and text utterance.
+4. Click `Submit Text` to get emotion prediction.
+5. Open Teacher Dashboard page with same `Session ID` and click `Load Summary`.
+6. Use `Download CSV` to export session logs.
+
+## 4) Backend tests
+
+```bash
+cd backend
+pytest -q
+```
+
+Covers:
+
+- `/health`
+- `/emotion/predict_text` (with DB + predictor mocked)

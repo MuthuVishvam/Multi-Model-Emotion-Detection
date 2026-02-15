@@ -14,7 +14,7 @@ body {
 }
 
 .container {
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 24px;
 }
@@ -62,12 +62,53 @@ nav a {
   border-radius: 8px;
 }
 
-.bar {
-  height: 24px;
-  background: #93c5fd;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  color: #0f172a;
-  font-size: 12px;
-  padding: 4px 8px;
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stat-card {
+  font-weight: 600;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.chart-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.student-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.student-table th,
+.student-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+}
+
+.result-panel {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  .stats-row,
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
 }
