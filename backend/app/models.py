@@ -33,14 +33,36 @@ class SessionStartResponse(BaseModel):
     created_at: datetime
 
 
-class EmotionLogRequest(BaseModel):
-    user_id: str
-    text: str = ""
-    emotion: str = "neutral"
-    probabilities: dict[str, float] = Field(default_factory=dict)
+class EmotionPredictRequest(BaseModel):
+    session_id: str
+    student_id: str
+    text: str
+
+
+class EmotionPredictResponse(BaseModel):
+    emotion: str
+    scores: dict[str, float]
+    timestamp: datetime
+
+
+class StudentStat(BaseModel):
+    student_id: str
+    top_emotion: str
+    engagement_score: float
 
 
 class DashboardSummaryResponse(BaseModel):
     session_id: str
-    total_logs: int
+    emotion_counts: dict[str, int]
+    emotion_percentages: dict[str, float]
+    engagement_score: float
+    confusion_index: float
+    timeline_buckets: dict[str, int]
+    student_stats: list[StudentStat] = Field(default_factory=list)
+
+
+class StudentDashboardResponse(BaseModel):
+    session_id: str
+    student_id: str
+    timeline: dict[str, int]
     emotion_distribution: dict[str, int]

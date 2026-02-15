@@ -1,5 +1,4 @@
-﻿from pydantic import BaseModel
-from pydantic_settings import BaseSettings
+﻿from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -12,6 +11,8 @@ class Settings(BaseSettings):
     mongodb_db_name: str = "emotion_app"
 
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    model_artifact_path: str = "../ml/artifacts/text_emotion_model.joblib"
 
 
 settings = Settings()

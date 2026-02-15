@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import db
 from app.dependencies import get_current_user
-from app.models import EmotionLogRequest, SessionStartRequest, SessionStartResponse
+from app.models import SessionStartRequest, SessionStartResponse
 
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -31,7 +31,7 @@ async def start_session(
 @router.post("/{session_id}/log_emotion")
 async def log_emotion(
     session_id: str,
-    payload: EmotionLogRequest,
+    payload: dict,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     if not ObjectId.is_valid(session_id):
@@ -41,12 +41,13 @@ async def log_emotion(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    payload = payload or {}
     log_doc = {
         "session_id": session_id,
-        "user_id": payload.user_id,
-        "text": payload.text,
-        "emotion": payload.emotion,
-        "probabilities": payload.probabilities,
+        "student_id": payload.get("student_id", payload.get("user_id", "unknown")),
+        "text": payload.get("text", ""),
+        "emotion": payload.get("emotion", "neutral"),
+        "scores": payload.get("scores", payload.get("probabilities", {})),
         "logged_by": current_user["email"],
         "created_at": datetime.now(timezone.utc),
     }
