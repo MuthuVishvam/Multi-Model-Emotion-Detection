@@ -17,14 +17,23 @@ async def start_session(
     current_user: dict = Depends(get_current_user),
 ) -> SessionStartResponse:
     now = datetime.now(timezone.utc)
+    session_object_id = ObjectId()
     session_doc = {
+        "_id": session_object_id,
+        "session_id": str(session_object_id),
         "session_name": payload.session_name,
         "course": payload.course,
+        "class_id": payload.class_id,
+        "lesson_id": payload.lesson_id,
+        "user_id": current_user["id"],
+        "started_at": now,
+        "ended_at": None,
+        "watch_time_sec": 0,
         "created_by": current_user["email"],
         "created_at": now,
     }
-    result = await db.sessions.insert_one(session_doc)
-    session_doc["id"] = str(result.inserted_id)
+    await db.sessions.insert_one(session_doc)
+    session_doc["id"] = str(session_object_id)
     return SessionStartResponse(**session_doc)
 
 
@@ -48,6 +57,8 @@ async def log_emotion(
         "text": payload.get("text", ""),
         "emotion": payload.get("emotion", "neutral"),
         "scores": payload.get("scores", payload.get("probabilities", {})),
+        "modality": payload.get("modality", payload.get("source", "unknown")),
+        "lesson_id": payload.get("lesson_id"),
         "logged_by": current_user["email"],
         "created_at": datetime.now(timezone.utc),
     }

@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import joblib
 
@@ -15,7 +15,7 @@ class TextEmotionPredictor:
         if self.model is None:
             if not self.model_path.exists():
                 raise FileNotFoundError(
-                    f"Model artifact not found at {self.model_path}. Train with ml/train_text.py first."
+                    f"Model artifact not found at {self.model_path}. Train with ml/train_text_emotion.py first."
                 )
             self.model = joblib.load(self.model_path)
 
@@ -26,3 +26,4 @@ class TextEmotionPredictor:
         scores = {labels[idx]: float(probs[idx]) for idx in range(len(labels))}
         emotion = max(scores, key=scores.get)
         return {"emotion": emotion, "scores": scores}
+

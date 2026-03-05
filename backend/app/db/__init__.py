@@ -1,0 +1,48 @@
+from app.db.indexes import ensure_platform_indexes
+from app.db.sample_documents import SAMPLE_DOCUMENTS
+from app.db.schemas import (
+    CourseCreate,
+    CourseDocument,
+    CourseUpdate,
+    EmotionEventCreate,
+    EmotionEventDocument,
+    EnrollmentCreate,
+    EnrollmentDocument,
+    EnrollmentUpdate,
+    LessonCreateDocument,
+    LessonDocument,
+    LessonUpdate,
+    ReportCreate,
+    ReportDocument,
+    SessionUpdate,
+    SessionCreateDocument,
+    SessionDocument,
+    UserCreate,
+    UserDocument,
+    UserUpdate,
+)
+
+
+__all__ = [
+    "ensure_platform_indexes",
+    "SAMPLE_DOCUMENTS",
+    "UserCreate",
+    "UserDocument",
+    "CourseCreate",
+    "CourseDocument",
+    "CourseUpdate",
+    "LessonCreateDocument",
+    "LessonDocument",
+    "LessonUpdate",
+    "EnrollmentCreate",
+    "EnrollmentDocument",
+    "EnrollmentUpdate",
+    "EmotionEventCreate",
+    "EmotionEventDocument",
+    "SessionCreateDocument",
+    "SessionDocument",
+    "SessionUpdate",
+    "ReportCreate",
+    "ReportDocument",
+    "UserUpdate",
+]

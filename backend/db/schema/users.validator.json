@@ -1,12 +1,62 @@
-﻿{
+{
   "$jsonSchema": {
     "bsonType": "object",
     "required": ["email", "password_hash", "role", "created_at"],
     "properties": {
-      "email": {"bsonType": "string", "description": "must be a string and is required"},
-      "password_hash": {"bsonType": "string", "description": "must be a hash string"},
-      "role": {"enum": ["teacher", "student"], "description": "must be teacher or student"},
-      "created_at": {"bsonType": "date"}
+      "email": {
+        "bsonType": "string",
+        "description": "must be a string and is required"
+      },
+      "password_hash": {
+        "bsonType": "string",
+        "description": "must be a hash string"
+      },
+      "role": {
+        "enum": ["teacher", "student", "admin"],
+        "description": "must be teacher, student, or admin"
+      },
+      "username": {
+        "bsonType": ["string", "null"]
+      },
+      "full_name": {
+        "bsonType": ["string", "null"]
+      },
+      "phone": {
+        "bsonType": ["string", "null"]
+      },
+      "department": {
+        "bsonType": ["string", "null"]
+      },
+      "year": {
+        "bsonType": ["string", "null"]
+      },
+      "avatar_url": {
+        "bsonType": ["string", "null"]
+      },
+      "bio": {
+        "bsonType": ["string", "null"]
+      },
+      "designation": {
+        "bsonType": ["string", "null"]
+      },
+      "experience_years": {
+        "bsonType": ["int", "long", "null"]
+      },
+      "verified": {
+        "bsonType": ["bool", "null"]
+      },
+      "verified_at": {
+        "bsonType": ["date", "null"]
+      },
+      "status": {
+        "enum": ["pending", "approved", "rejected", null]
+      },
+      "created_at": {
+        "bsonType": "date"
+      },
+      "updated_at": {
+        "bsonType": ["date", "null"]
+      }
     }
   }
 }

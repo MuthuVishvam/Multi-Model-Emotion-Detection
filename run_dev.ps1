@@ -12,20 +12,20 @@ Write-Host "Starting backend and frontend..."
 if (-not $SkipNpmInstall) {
   Write-Host "Installing frontend dependencies..."
   Push-Location $frontendPath
-  npm install
+  npm.cmd install
   Pop-Location
 }
 
 $backendProc = Start-Process powershell -PassThru -ArgumentList @(
   "-NoExit",
   "-Command",
-  "Set-Location '$backendPath'; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+  "Set-Location '$backendPath'; $env:RELOAD='1'; python run.py"
 )
 
 $frontendProc = Start-Process powershell -PassThru -ArgumentList @(
   "-NoExit",
   "-Command",
-  "Set-Location '$frontendPath'; npm run dev"
+  "Set-Location '$frontendPath'; npm.cmd run dev"
 )
 
 Write-Host "Backend PID: $($backendProc.Id)"

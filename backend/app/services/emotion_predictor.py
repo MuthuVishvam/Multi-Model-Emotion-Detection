@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import joblib
 
@@ -14,7 +14,7 @@ class TextEmotionPredictorService:
         if self.model is None:
             if not self.artifact_path.exists():
                 raise FileNotFoundError(
-                    f"Model artifact not found at {self.artifact_path}. Train via `python ml/train_text.py`."
+                    f"Model artifact not found at {self.artifact_path}. Train via `python ml/train_text_emotion.py`."
                 )
             self.model = joblib.load(self.artifact_path)
         return self.model
@@ -29,3 +29,4 @@ class TextEmotionPredictorService:
 
 
 predictor_service = TextEmotionPredictorService()
+

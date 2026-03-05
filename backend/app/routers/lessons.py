@@ -1,81 +1,201 @@
-﻿from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 
-from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
-
-from app.database import db
 from app.dependencies import get_current_user, require_teacher
-from app.models import LessonCreateRequest, LessonResponse
+from app.models import LessonAssignRequest, LessonAssignmentResponse, LessonManageResponse
+from app.services.lesson_management import lesson_management_service
 
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
 
-@router.post("", response_model=LessonResponse)
-async def create_lesson(
-    payload: LessonCreateRequest,
-    teacher_user: dict = Depends(require_teacher),
-) -> LessonResponse:
-    lesson_object_id = ObjectId()
-    lesson_doc = {
-        "_id": lesson_object_id,
-        "lesson_id": str(lesson_object_id),
-        "title": payload.title,
-        "description": payload.description,
-        "content": payload.content,
-        "created_by": teacher_user["email"],
-        "created_at": datetime.now(timezone.utc),
-    }
-    await db.lessons.insert_one(lesson_doc)
-    return LessonResponse(**{k: v for k, v in lesson_doc.items() if k != "_id"})
-
-
-@router.get("", response_model=list[LessonResponse])
-async def get_lessons(current_user: dict = Depends(get_current_user)) -> list[LessonResponse]:
-    docs = await db.lessons.find().sort("created_at", -1).to_list(length=None)
-    rows = []
-    for doc in docs:
-        lesson_id = doc.get("lesson_id", str(doc["_id"]))
-        row = {
-            "lesson_id": lesson_id,
-            "title": doc["title"],
-            "description": doc["description"],
-            "content": doc["content"],
-            "created_by": doc["created_by"],
-            "created_at": doc["created_at"],
+async def _extract_create_payload(
+    request: Request,
+    *,
+    title: str | None,
+    description: str | None,
+    course_id: str | None,
+    video_url: str | None,
+    duration_sec: int | None,
+    resources,
+) -> dict:
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/json" in content_type:
+        body = await request.json()
+        return {
+            "title": body.get("title"),
+            "description": body.get("description"),
+            "course_id": body.get("course_id") or body.get("course") or "live-classroom-studio",
+            "video_url": body.get("video_url") or body.get("content"),
+            "duration_sec": body.get("duration_sec"),
+            "resources": body.get("resources", []),
         }
-        rows.append(LessonResponse(**row))
-    return rows
+
+    return {
+        "title": title,
+        "description": description,
+        "course_id": course_id,
+        "video_url": video_url,
+        "duration_sec": duration_sec,
+        "resources": resources,
+    }
 
 
-@router.get("/{lesson_id}", response_model=LessonResponse)
-async def get_lesson(lesson_id: str, current_user: dict = Depends(get_current_user)) -> LessonResponse:
-    lesson = None
-    if ObjectId.is_valid(lesson_id):
-        lesson = await db.lessons.find_one({"_id": ObjectId(lesson_id)})
-    if not lesson:
-        lesson = await db.lessons.find_one({"lesson_id": lesson_id})
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
+async def _extract_update_payload(
+    request: Request,
+    *,
+    title: str | None,
+    description: str | None,
+    course_id: str | None,
+    video_url: str | None,
+    duration_sec: int | None,
+    resources,
+) -> dict:
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/json" in content_type:
+        body = await request.json()
+        return {
+            "title": body.get("title"),
+            "description": body.get("description"),
+            "course_id": body.get("course_id") or body.get("course"),
+            "video_url": body.get("video_url") or body.get("content"),
+            "duration_sec": body.get("duration_sec"),
+            "resources": body.get("resources"),
+        }
 
-    return LessonResponse(
-        lesson_id=lesson.get("lesson_id", str(lesson["_id"])),
-        title=lesson["title"],
-        description=lesson["description"],
-        content=lesson["content"],
-        created_by=lesson["created_by"],
-        created_at=lesson["created_at"],
+    return {
+        "title": title,
+        "description": description,
+        "course_id": course_id,
+        "video_url": video_url,
+        "duration_sec": duration_sec,
+        "resources": resources,
+    }
+
+
+@router.post("", response_model=LessonManageResponse)
+async def create_lesson(
+    request: Request,
+    title: str | None = Form(default=None),
+    description: str | None = Form(default=None),
+    course_id: str | None = Form(default=None),
+    video_url: str | None = Form(default=None),
+    duration_sec: int | None = Form(default=None),
+    resources: str | None = Form(default=None),
+    uploaded_file: UploadFile | None = File(default=None),
+    teacher_user: dict = Depends(require_teacher),
+) -> LessonManageResponse:
+    payload = await _extract_create_payload(
+        request,
+        title=title,
+        description=description,
+        course_id=course_id,
+        video_url=video_url,
+        duration_sec=duration_sec,
+        resources=resources,
     )
+    result = await lesson_management_service.create_lesson(
+        teacher_user=teacher_user,
+        title=payload.get("title") or "",
+        description=payload.get("description") or "",
+        course_id=payload.get("course_id") or "",
+        video_url=payload.get("video_url"),
+        duration_sec=payload.get("duration_sec"),
+        resources_raw=payload.get("resources"),
+        uploaded_file=uploaded_file,
+    )
+    return LessonManageResponse(**result)
+
+
+@router.put("/{lesson_id}", response_model=LessonManageResponse)
+async def update_lesson(
+    lesson_id: str,
+    request: Request,
+    title: str | None = Form(default=None),
+    description: str | None = Form(default=None),
+    course_id: str | None = Form(default=None),
+    video_url: str | None = Form(default=None),
+    duration_sec: int | None = Form(default=None),
+    resources: str | None = Form(default=None),
+    uploaded_file: UploadFile | None = File(default=None),
+    teacher_user: dict = Depends(require_teacher),
+) -> LessonManageResponse:
+    payload = await _extract_update_payload(
+        request,
+        title=title,
+        description=description,
+        course_id=course_id,
+        video_url=video_url,
+        duration_sec=duration_sec,
+        resources=resources,
+    )
+    result = await lesson_management_service.update_lesson(
+        teacher_user=teacher_user,
+        lesson_id=lesson_id,
+        title=payload.get("title"),
+        description=payload.get("description"),
+        course_id=payload.get("course_id"),
+        video_url=payload.get("video_url"),
+        duration_sec=payload.get("duration_sec"),
+        resources_raw=payload.get("resources"),
+        uploaded_file=uploaded_file,
+    )
+    return LessonManageResponse(**result)
+
+
+@router.get("/my", response_model=list[LessonManageResponse])
+async def list_my_lessons(teacher_user: dict = Depends(require_teacher)) -> list[LessonManageResponse]:
+    rows = await lesson_management_service.list_teacher_lessons(teacher_user=teacher_user)
+    return [LessonManageResponse(**row) for row in rows]
+
+
+@router.post("/{lesson_id}/assign", response_model=list[LessonAssignmentResponse])
+async def assign_lesson_to_classes(
+    lesson_id: str,
+    payload: LessonAssignRequest,
+    teacher_user: dict = Depends(require_teacher),
+) -> list[LessonAssignmentResponse]:
+    if not payload.class_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="class_ids is required")
+    rows = await lesson_management_service.assign_lesson_to_classes(
+        teacher_user=teacher_user,
+        lesson_id=lesson_id,
+        class_ids=payload.class_ids,
+        publish_at=payload.publish_at,
+        due_at=payload.due_at,
+        is_published=payload.is_published,
+    )
+    return [LessonAssignmentResponse(**row) for row in rows]
+
+
+@router.get("", response_model=list[LessonManageResponse])
+async def list_accessible_lessons(current_user: dict = Depends(get_current_user)) -> list[LessonManageResponse]:
+    rows = await lesson_management_service.list_accessible_lessons(current_user=current_user)
+    return [LessonManageResponse(**row) for row in rows]
+
+
+@router.get("/{lesson_id}", response_model=LessonManageResponse)
+async def get_lesson(
+    lesson_id: str,
+    class_id: str | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+) -> LessonManageResponse:
+    row = await lesson_management_service.get_lesson_for_user(
+        current_user=current_user,
+        lesson_id=lesson_id,
+        class_id=class_id,
+    )
+    return LessonManageResponse(**row)
 
 
 @router.delete("/{lesson_id}")
-async def delete_lesson(lesson_id: str, teacher_user: dict = Depends(require_teacher)) -> dict:
-    query = {"lesson_id": lesson_id}
-    if ObjectId.is_valid(lesson_id):
-        query = {"$or": [{"_id": ObjectId(lesson_id)}, {"lesson_id": lesson_id}]}
-
-    result = await db.lessons.delete_one(query)
-    if result.deleted_count == 0:
+async def delete_lesson(
+    lesson_id: str,
+    teacher_user: dict = Depends(require_teacher),
+) -> dict:
+    deleted = await lesson_management_service.delete_lesson(
+        teacher_user=teacher_user,
+        lesson_id=lesson_id,
+    )
+    if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
-
     return {"message": "Lesson deleted"}

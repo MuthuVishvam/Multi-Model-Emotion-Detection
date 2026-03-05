@@ -7,6 +7,19 @@ def compute_distribution(logs: list[dict]) -> Counter:
     return Counter(log.get("emotion", "unknown") for log in logs)
 
 
+def compute_modality_counts(logs: list[dict]) -> Counter:
+    return Counter(log.get("modality", "unknown") for log in logs)
+
+
+def compute_modality_emotion_counts(logs: list[dict]) -> dict[str, dict[str, int]]:
+    grouped: dict[str, Counter] = defaultdict(Counter)
+    for log in logs:
+        modality = log.get("modality", "unknown")
+        emotion = log.get("emotion", "unknown")
+        grouped[modality][emotion] += 1
+    return {modality: dict(counter) for modality, counter in grouped.items()}
+
+
 def compute_percentages(distribution: Counter, total: int) -> dict[str, float]:
     if total == 0:
         return {}
@@ -61,6 +74,8 @@ def build_student_stats(logs: list[dict]) -> list[dict]:
                 "student_id": student_id,
                 "top_emotion": distribution.most_common(1)[0][0] if distribution else "unknown",
                 "engagement_score": compute_engagement_score(distribution, total),
+                "sample_count": total,
+                "modality_counts": dict(compute_modality_counts(student_logs)),
             }
         )
     return sorted(rows, key=lambda row: row["student_id"])

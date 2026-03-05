@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+
+SEED_TIME = datetime(2026, 2, 27, 12, 0, tzinfo=timezone.utc)
+
+
+SAMPLE_DOCUMENTS = {
+    "users": [
+        {
+            "userId": "usr_teacher_001",
+            "email": "teacher@example.com",
+            "passwordHash": "$2b$12$teacher.hash.example",
+            "role": "teacher",
+            "username": "prof_ada",
+            "full_name": "Prof. Ada Lovelace",
+            "phone": "+1-555-0101",
+            "designation": "Assistant Professor",
+            "department": "Computer Science",
+            "experience_years": 8,
+            "avatar_url": "https://example.com/avatars/prof_ada.png",
+            "bio": "Teaches AI-assisted learning systems.",
+            "verified": True,
+            "verified_at": SEED_TIME - timedelta(days=19),
+            "status": "approved",
+            "isActive": True,
+            "is_active": True,
+            "profile": {"displayName": "Prof. Ada", "department": "Computer Science"},
+            "createdAt": SEED_TIME - timedelta(days=20),
+            "updatedAt": SEED_TIME - timedelta(days=1),
+        },
+        {
+            "userId": "usr_student_001",
+            "email": "student@example.com",
+            "passwordHash": "$2b$12$student.hash.example",
+            "role": "student",
+            "username": "john_student",
+            "full_name": "John Student",
+            "phone": "+1-555-0102",
+            "department": "Computer Science",
+            "year": "3rd",
+            "avatar_url": "https://example.com/avatars/john_student.png",
+            "bio": "Interested in ML and analytics.",
+            "verified": True,
+            "verified_at": SEED_TIME - timedelta(days=14),
+            "status": "approved",
+            "designation": None,
+            "experience_years": None,
+            "isActive": True,
+            "is_active": True,
+            "profile": {"displayName": "John Student", "cohort": "Spring 2026"},
+            "createdAt": SEED_TIME - timedelta(days=15),
+            "updatedAt": SEED_TIME - timedelta(days=1),
+        },
+        {
+            "userId": "usr_admin_001",
+            "email": "admin@example.com",
+            "passwordHash": "$2b$12$admin.hash.example",
+            "role": "admin",
+            "username": "platform_admin",
+            "full_name": "Platform Admin",
+            "verified": True,
+            "verified_at": SEED_TIME - timedelta(days=30),
+            "status": "approved",
+            "isActive": True,
+            "is_active": True,
+            "profile": {"displayName": "Admin"},
+            "createdAt": SEED_TIME - timedelta(days=30),
+            "updatedAt": SEED_TIME - timedelta(days=1),
+        },
+    ],
+    "courses": [
+        {
+            "courseId": "crs_python_101",
+            "title": "Python for Data Beginners",
+            "description": "Hands-on introduction to Python data workflows.",
+            "category": "Data Science",
+            "createdBy": "usr_teacher_001",
+            "isPublished": True,
+            "createdAt": SEED_TIME - timedelta(days=10),
+            "updatedAt": SEED_TIME - timedelta(days=1),
+        }
+    ],
+    "lessons": [
+        {
+            "lessonId": "lsn_intro_numpy",
+            "courseId": "crs_python_101",
+            "title": "Numpy Basics",
+            "description": "Vectors, matrices, and slicing fundamentals.",
+            "content": "lesson-markdown-or-html",
+            "orderIndex": 1,
+            "createdBy": "usr_teacher_001",
+            "createdAt": SEED_TIME - timedelta(days=9),
+            "updatedAt": SEED_TIME - timedelta(days=1),
+        }
+    ],
+    "enrollments": [
+        {
+            "enrollmentId": "enr_001",
+            "userId": "usr_student_001",
+            "courseId": "crs_python_101",
+            "status": "active",
+            "enrolledAt": SEED_TIME - timedelta(days=8),
+            "updatedAt": SEED_TIME - timedelta(days=1),
+        }
+    ],
+    "sessions": [
+        {
+            "sessionId": "ses_001",
+            "userId": "usr_student_001",
+            "courseId": "crs_python_101",
+            "lessonId": "lsn_intro_numpy",
+            "status": "finished",
+            "startedAt": SEED_TIME - timedelta(minutes=35),
+            "endedAt": SEED_TIME - timedelta(minutes=5),
+            "updatedAt": SEED_TIME - timedelta(minutes=5),
+        }
+    ],
+    "emotion_events": [
+        {
+            "eventId": "evt_face_001",
+            "sessionId": "ses_001",
+            "userId": "usr_student_001",
+            "courseId": "crs_python_101",
+            "lessonId": "lsn_intro_numpy",
+            "modality": "face",
+            "emotion": "interest",
+            "confidence": 0.82,
+            "timestamp": SEED_TIME - timedelta(minutes=30),
+            "payload": {"source": "face-api.js"},
+            "createdAt": SEED_TIME - timedelta(minutes=30),
+        },
+        {
+            "eventId": "evt_text_001",
+            "sessionId": "ses_001",
+            "userId": "usr_student_001",
+            "courseId": "crs_python_101",
+            "lessonId": "lsn_intro_numpy",
+            "modality": "text",
+            "emotion": "confusion",
+            "confidence": 0.74,
+            "timestamp": SEED_TIME - timedelta(minutes=22),
+            "payload": {"text": "why does slicing return a view?"},
+            "createdAt": SEED_TIME - timedelta(minutes=22),
+        },
+        {
+            "eventId": "evt_voice_001",
+            "sessionId": "ses_001",
+            "userId": "usr_student_001",
+            "courseId": "crs_python_101",
+            "lessonId": "lsn_intro_numpy",
+            "modality": "voice",
+            "emotion": "stress",
+            "confidence": 0.64,
+            "timestamp": SEED_TIME - timedelta(minutes=12),
+            "payload": {"durationSec": 14.8, "format": "audio/webm"},
+            "createdAt": SEED_TIME - timedelta(minutes=12),
+        },
+    ],
+    "reports": [
+        {
+            "reportId": "rpt_session_ses_001",
+            "scopeType": "session",
+            "scopeId": "ses_001",
+            "generatedAt": SEED_TIME - timedelta(minutes=3),
+            "data": {
+                "totals": {"events": 3, "engagementScore": 18.0},
+                "dominantEmotionOverall": "interest",
+                "dominantEmotionLast5m": "stress",
+                "distribution": {
+                    "interest": 33.33,
+                    "confusion": 33.33,
+                    "stress": 33.33,
+                },
+            },
+            "expiresAt": SEED_TIME + timedelta(hours=1),
+        }
+    ],
+}

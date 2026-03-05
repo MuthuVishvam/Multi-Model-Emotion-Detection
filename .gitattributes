@@ -1,0 +1,16 @@
+# normalize all text files to LF in repo
+* text=auto eol=lf
+
+# keep windows scripts as CRLF (optional)
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# binaries - never modify
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.joblib binary
+*.pkl binary

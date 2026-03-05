@@ -8,6 +8,8 @@
       "text": {"bsonType": "string"},
       "emotion": {"bsonType": "string"},
       "scores": {"bsonType": "object"},
+      "modality": {"bsonType": "string"},
+      "lesson_id": {"bsonType": ["string", "null"]},
       "created_at": {"bsonType": "date"}
     }
   }

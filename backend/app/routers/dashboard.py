@@ -14,6 +14,8 @@ from app.services.analytics import (
     compute_confusion_index,
     compute_distribution,
     compute_engagement_score,
+    compute_modality_counts,
+    compute_modality_emotion_counts,
     compute_percentages,
 )
 
@@ -48,6 +50,8 @@ async def get_summary(
         session_id=session_id,
         emotion_counts=dict(distribution),
         emotion_percentages=compute_percentages(distribution, total),
+        modality_counts=dict(compute_modality_counts(logs)),
+        modality_emotion_counts=compute_modality_emotion_counts(logs),
         engagement_score=compute_engagement_score(distribution, total),
         confusion_index=compute_confusion_index(distribution, total),
         timeline_buckets=bucket_by_minute(logs),
@@ -84,7 +88,7 @@ async def export_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["timestamp", "student_id", "text", "emotion"])
+    writer.writerow(["timestamp", "student_id", "modality", "lesson_id", "text", "emotion"])
 
     for log in logs:
         created_at = log.get("created_at")
@@ -92,6 +96,8 @@ async def export_csv(
         writer.writerow([
             timestamp,
             log.get("student_id", ""),
+            log.get("modality", ""),
+            log.get("lesson_id", ""),
             log.get("text", ""),
             log.get("emotion", ""),
         ])

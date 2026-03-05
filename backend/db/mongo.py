@@ -48,8 +48,32 @@ def get_emotion_logs_collection() -> AsyncIOMotorCollection:
     return get_db()["emotion_logs"]
 
 
+def get_emotion_events_collection() -> AsyncIOMotorCollection:
+    return get_db()["emotion_events"]
+
+
+def get_attention_events_collection() -> AsyncIOMotorCollection:
+    return get_db()["attention_events"]
+
+
 def get_lessons_collection() -> AsyncIOMotorCollection:
     return get_db()["lessons"]
+
+
+def get_classes_collection() -> AsyncIOMotorCollection:
+    return get_db()["classes"]
+
+
+def get_class_members_collection() -> AsyncIOMotorCollection:
+    return get_db()["class_members"]
+
+
+def get_notifications_collection() -> AsyncIOMotorCollection:
+    return get_db()["notifications"]
+
+
+def get_lesson_assignments_collection() -> AsyncIOMotorCollection:
+    return get_db()["lesson_assignments"]
 
 
 class Collections:
@@ -66,8 +90,32 @@ class Collections:
         return get_emotion_logs_collection()
 
     @property
+    def emotion_events(self) -> AsyncIOMotorCollection:
+        return get_emotion_events_collection()
+
+    @property
+    def attention_events(self) -> AsyncIOMotorCollection:
+        return get_attention_events_collection()
+
+    @property
     def lessons(self) -> AsyncIOMotorCollection:
         return get_lessons_collection()
+
+    @property
+    def classes(self) -> AsyncIOMotorCollection:
+        return get_classes_collection()
+
+    @property
+    def class_members(self) -> AsyncIOMotorCollection:
+        return get_class_members_collection()
+
+    @property
+    def notifications(self) -> AsyncIOMotorCollection:
+        return get_notifications_collection()
+
+    @property
+    def lesson_assignments(self) -> AsyncIOMotorCollection:
+        return get_lesson_assignments_collection()
 
 
 collections = Collections()
