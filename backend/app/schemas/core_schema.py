@@ -18,7 +18,8 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    username: Optional[Annotated[str, Field(min_length=3, max_length=64)]] = None
     password: Annotated[str, Field(min_length=1, max_length=256)]
 
 
@@ -352,6 +353,8 @@ class LessonManageResponse(BaseModel):
 class SessionStartRequest(BaseModel):
     session_name: Annotated[str, Field(min_length=1, max_length=200)]
     course: Optional[Annotated[str, Field(min_length=1, max_length=128)]] = None
+    class_id: Optional[NonEmptyId] = None
+    lesson_id: Optional[NonEmptyId] = None
 
 
 class SessionStartResponse(BaseModel):

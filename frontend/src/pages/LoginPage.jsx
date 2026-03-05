@@ -3,8 +3,8 @@ import { useState } from "react";
 import { apiRequest, fetchCurrentUser } from "../services/api";
 
 export default function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState("teacher@test.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [roleChoice, setRoleChoice] = useState("teacher");
   const [message, setMessage] = useState("");
 
@@ -56,12 +56,6 @@ export default function LoginPage({ onLogin }) {
       <button className="secondary" onClick={handleRegister}>Register as {roleChoice}</button>
       {message && <p>{message}</p>}
 
-      <div className="hint-box">
-        <p>Seeded teacher (approved): teacher@test.com / 123456</p>
-        <p>Seeded teacher (pending): teacher_pending@test.com / 123456</p>
-        <p>Seeded students: student1@test.com / 123456 and student2@test.com / 123456</p>
-        <p>Seeded admin: admin@test.com / 123456</p>
-      </div>
     </div>
   );
 }

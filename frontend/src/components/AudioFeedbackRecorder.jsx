@@ -165,13 +165,33 @@ export default function AudioFeedbackRecorder({
   }
 
   async function uploadAudioBlob(blob, timestamp, filename) {
+    const normalizedUserId = String(userId || "").trim();
+    const normalizedCourseId = String(courseId || "").trim();
+    const normalizedClassId = String(classId || "").trim();
+    const normalizedLessonId = String(lessonId || "").trim();
+    const normalizedSessionId = String(sessionId || "").trim();
+
+    if (!normalizedUserId) {
+      throw new Error("Missing user information. Please sign in again.");
+    }
+    if (!normalizedSessionId) {
+      throw new Error("Start a session first before recording feedback.");
+    }
+    if (!normalizedLessonId) {
+      throw new Error("Open a lesson before recording voice feedback.");
+    }
+
     const token = localStorage.getItem("token") || "";
     const formData = new FormData();
-    formData.append("userId", userId || "");
-    formData.append("courseId", courseId || "");
-    formData.append("classId", classId || "");
-    formData.append("lessonId", lessonId || "");
-    formData.append("sessionId", sessionId || "");
+    formData.append("userId", normalizedUserId);
+    if (normalizedCourseId) {
+      formData.append("courseId", normalizedCourseId);
+    }
+    if (normalizedClassId) {
+      formData.append("classId", normalizedClassId);
+    }
+    formData.append("lessonId", normalizedLessonId);
+    formData.append("sessionId", normalizedSessionId);
     formData.append("timestamp", timestamp);
     formData.append("audio_file", blob, filename);
 

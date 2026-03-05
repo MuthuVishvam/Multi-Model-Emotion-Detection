@@ -1,5 +1,50 @@
 export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+function formatErrorDetail(detail, fallback = "Request failed") {
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const messages = detail
+      .map((item) => {
+        if (!item) {
+          return "";
+        }
+        if (typeof item === "string") {
+          return item;
+        }
+        const loc = Array.isArray(item.loc) ? item.loc.join(".") : "";
+        const msg = typeof item.msg === "string" ? item.msg : "";
+        if (loc && msg) {
+          return `${loc}: ${msg}`;
+        }
+        if (msg) {
+          return msg;
+        }
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+  }
+  if (detail && typeof detail === "object") {
+    if (typeof detail.message === "string" && detail.message.trim()) {
+      return detail.message;
+    }
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -54,7 +99,7 @@ export async function apiRequest(path, method = "GET", body = null, token = "", 
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || "Request failed");
+    throw new Error(formatErrorDetail(error?.detail, "Request failed"));
   }
 
   return response.json();
@@ -101,7 +146,7 @@ export async function apiMultipartRequest(path, method = "POST", formData, token
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || "Request failed");
+    throw new Error(formatErrorDetail(error?.detail, "Request failed"));
   }
 
   return response.json();

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
         "audio/wave",
         "audio/ogg",
         "audio/mpeg",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/aac",
     ]
     model_artifact_path: str = "../ml/artifacts/text_emotion_model.joblib"
 

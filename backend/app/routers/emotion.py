@@ -300,13 +300,19 @@ async def detect_voice_emotion_for_feedback(
     audio_file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
 ) -> VoiceEmotionResponse:
+    normalized_user_id = (userId or "").strip()
+    normalized_course_id = (courseId or "").strip() or None
+    normalized_class_id = (classId or "").strip() or None
+    normalized_lesson_id = (lessonId or "").strip() or None
+    normalized_session_id = (sessionId or "").strip()
+
     try:
         payload = VoiceEmotionUploadMeta(
-            userId=userId,
-            courseId=courseId,
-            classId=classId,
-            lessonId=lessonId,
-            sessionId=sessionId,
+            userId=normalized_user_id,
+            courseId=normalized_course_id,
+            classId=normalized_class_id,
+            lessonId=normalized_lesson_id,
+            sessionId=normalized_session_id,
             timestamp=timestamp,
         )
     except ValidationError as exc:
