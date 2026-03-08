@@ -25,7 +25,7 @@ def _to_me_payload(user: dict) -> dict:
     status_value = user.get("status")
     verified_value = user.get("verified")
     if role == "teacher":
-        status_value = status_value or "approved"
+        status_value = status_value or "pending"
         if verified_value is None:
             verified_value = status_value == "approved"
 
@@ -117,14 +117,19 @@ async def login(payload: UserLogin) -> TokenResponse:
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not _is_user_active(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled by admin")
     if user.get("role") == "teacher":
         teacher_status = user.get("status", "pending")
         teacher_verified = bool(user.get("verified", False))
+        if teacher_status == "rejected":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account rejected by admin",
+            )
         if teacher_status != "approved" or not teacher_verified:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Teacher account is pending admin approval",
+                detail="Account pending admin approval",
             )
 
     subject_email = user.get("email")

@@ -76,6 +76,7 @@ class TeacherAdminResponse(BaseModel):
     verified_at: Optional[datetime] = None
     status: Literal["pending", "approved", "rejected"] = "pending"
     is_active: bool = True
+    created_at: Optional[datetime] = None
 
 
 class AdminUserStatusResponse(BaseModel):

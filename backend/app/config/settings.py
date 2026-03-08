@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     app_name: str = "Emotion Detection Backend"
     jwt_secret: str = Field("change_me", validation_alias=AliasChoices("JWT_SECRET", "SECRET_KEY"))
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    access_token_expire_minutes: int = Field(
+        60,
+        validation_alias=AliasChoices("ACCESS_TOKEN_EXPIRE_MINUTES", "JWT_EXPIRE_MINUTES"),
+    )
 
     mongo_uri: str = Field(
         "mongodb://localhost:27017",

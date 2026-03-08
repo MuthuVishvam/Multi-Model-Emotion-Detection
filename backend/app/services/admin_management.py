@@ -28,6 +28,7 @@ class AdminManagementService:
     def serialize_teacher(user: dict) -> dict:
         return {
             "id": str(user.get("_id")),
+            "role": "teacher",
             "email": user.get("email"),
             "username": user.get("username"),
             "full_name": user.get("full_name"),
@@ -41,6 +42,7 @@ class AdminManagementService:
             "verified_at": user.get("verified_at"),
             "status": user.get("status", "pending"),
             "is_active": _is_user_active(user),
+            "created_at": user.get("created_at") or user.get("createdAt"),
         }
 
     async def list_pending_teachers(self) -> list[dict]:
@@ -85,6 +87,20 @@ class AdminManagementService:
         updated = await db.users.find_one_and_update(
             {"_id": teacher_oid, "role": "teacher"},
             {"$set": updates},
+            projection={"password_hash": 0},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+        return self.serialize_teacher(updated)
+
+    async def set_teacher_active(self, *, teacher_id: str, is_active: bool) -> dict:
+        now = datetime.now(timezone.utc)
+        teacher_oid = self._validate_user_id(teacher_id)
+
+        updated = await db.users.find_one_and_update(
+            {"_id": teacher_oid, "role": "teacher"},
+            {"$set": {"is_active": bool(is_active), "isActive": bool(is_active), "updated_at": now}},
             projection={"password_hash": 0},
             return_document=ReturnDocument.AFTER,
         )

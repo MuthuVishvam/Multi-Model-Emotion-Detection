@@ -35,7 +35,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     if not user:
         raise credentials_exception
     if not _is_user_active(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled by admin")
     user["id"] = str(user.pop("_id"))
     return user
 
@@ -57,12 +57,17 @@ def require_role(*roles: str):
 
 async def require_teacher(current_user: dict = Depends(get_current_user)) -> dict:
     current_user = await require_role("teacher")(current_user=current_user)
-    status_value = current_user.get("status", "approved")
-    verified_value = current_user.get("verified", True)
+    status_value = current_user.get("status", "pending")
+    verified_value = current_user.get("verified", False)
+    if status_value == "rejected":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account rejected by admin",
+        )
     if status_value != "approved" or not verified_value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Teacher account is pending admin approval",
+            detail="Account pending admin approval",
         )
     return current_user
 

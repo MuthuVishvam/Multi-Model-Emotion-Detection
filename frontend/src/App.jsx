@@ -87,7 +87,7 @@ function AppNavbar({ user, unreadCount, onLogout }) {
           {user.role === "admin" && (
             <>
               <NavLink to="/admin/dashboard" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
-                Dashboard
+                Admin Dashboard
               </NavLink>
               <NavLink to="/admin/teachers" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
                 Teachers
@@ -296,6 +296,16 @@ export default function App() {
             <RequireAuth user={user}>
               <RequireRole user={user} allow={["teacher"]}>
                 <TeacherProfilePage user={user} onProfileUpdated={handleProfileUpdated} />
+              </RequireRole>
+            </RequireAuth>
+          )}
+        />
+        <Route
+          path="/admin"
+          element={(
+            <RequireAuth user={user}>
+              <RequireRole user={user} allow={["admin"]}>
+                <Navigate to="/admin/dashboard" replace />
               </RequireRole>
             </RequireAuth>
           )}

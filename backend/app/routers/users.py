@@ -17,7 +17,7 @@ def _to_me_payload(user: dict) -> dict:
     status_value = user.get("status")
     verified_value = user.get("verified")
     if role == "teacher":
-        status_value = status_value or "approved"
+        status_value = status_value or "pending"
         if verified_value is None:
             verified_value = status_value == "approved"
 
