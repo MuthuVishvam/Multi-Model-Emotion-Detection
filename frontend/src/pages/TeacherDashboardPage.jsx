@@ -364,9 +364,9 @@ export default function TeacherDashboardPage() {
   }
 
   return (
-    <div className="learning-page teacher-analytics-page">
+    <div className="learning-page teacher-analytics-page teacher-dashboard-page">
       <section className="card">
-        <p className="eyebrow">Teacher Analytics</p>
+        <p className="eyebrow">Teacher Dashboard</p>
         <h2>Multi-modal Lesson Dashboard</h2>
         <p className="small-note">Filter by class, lesson, and date range to review engagement and per-student drilldowns.</p>
 

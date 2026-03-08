@@ -53,6 +53,7 @@ function CourseCard({ course }) {
 
 export default function CourseCatalogPage({ user }) {
   const [lessons, setLessons] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
@@ -62,6 +63,7 @@ export default function CourseCatalogPage({ user }) {
 
     async function loadLessons() {
       const token = localStorage.getItem("token") || "";
+      setIsLoading(true);
       try {
         const data = await apiRequest("/lessons", "GET", null, token);
         if (!isMounted) {
@@ -74,6 +76,10 @@ export default function CourseCatalogPage({ user }) {
           return;
         }
         setErrorMessage(error.message);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
 
@@ -113,13 +119,13 @@ export default function CourseCatalogPage({ user }) {
   }, [courses, activeCategory, searchValue]);
 
   return (
-    <div className="learning-page">
+    <div className="learning-page student-dashboard-page">
       <section className="catalog-hero card">
         <div>
-          <p className="eyebrow">Browse Courses</p>
-          <h2>Learn with a structured, Coursera-style flow</h2>
+          <p className="eyebrow">Student Dashboard</p>
+          <h2>Explore curated learning paths and start your next lesson</h2>
           <p className="catalog-hero__subtitle">
-            Search courses, open a syllabus, then launch the lesson player with notes, discussion, and resources.
+            Browse courses, open lesson modules, and track your learning flow with an emotion-aware experience.
           </p>
         </div>
         <div className="catalog-hero__summary">
@@ -167,18 +173,25 @@ export default function CourseCatalogPage({ user }) {
       </section>
 
       {errorMessage && <div className="card inline-message">{errorMessage}</div>}
+      {isLoading && (
+        <section className="card">
+          <p className="small-note">Loading course catalog...</p>
+        </section>
+      )}
 
-      <section className="course-grid">
-        {filteredCourses.map((course) => (
-          <CourseCard key={course.id} course={course} />
-        ))}
-        {filteredCourses.length === 0 && (
-          <div className="card empty-state">
-            <h3>No matching courses</h3>
-            <p>Try a different category or search term.</p>
-          </div>
-        )}
-      </section>
+      {!isLoading && (
+        <section className="course-grid">
+          {filteredCourses.map((course) => (
+            <CourseCard key={course.id} course={course} />
+          ))}
+          {filteredCourses.length === 0 && (
+            <div className="card empty-state">
+              <h3>No matching courses</h3>
+              <p>Try a different category or search term.</p>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

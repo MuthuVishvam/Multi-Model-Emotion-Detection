@@ -1,10 +1,23 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+
 :root {
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-strong: #ffffff;
+  --line: rgba(15, 23, 42, 0.12);
+  --text-main: #0f172a;
+  --text-soft: #475569;
+  --brand: #0b5fff;
+  --brand-strong: #0a47b8;
+  --success: #0f766e;
+  --warning: #b45309;
+  --danger: #b91c1c;
   color: #0f172a;
   background:
-    radial-gradient(circle at 10% 10%, rgba(191, 219, 254, 0.55), transparent 35%),
-    radial-gradient(circle at 90% 15%, rgba(196, 181, 253, 0.35), transparent 40%),
-    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    radial-gradient(circle at 10% 10%, rgba(59, 130, 246, 0.2), transparent 38%),
+    radial-gradient(circle at 90% 18%, rgba(20, 184, 166, 0.16), transparent 42%),
+    radial-gradient(circle at 55% 100%, rgba(251, 191, 36, 0.1), transparent 36%),
+    linear-gradient(180deg, #f6f9ff 0%, #edf4ff 100%);
+  font-family: "Manrope", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
 * {
@@ -19,7 +32,7 @@ body,
 
 body {
   margin: 0;
-  color: #0f172a;
+  color: var(--text-main);
   background: transparent;
 }
 
@@ -36,6 +49,56 @@ a {
 .app-shell {
   display: grid;
   gap: 16px;
+}
+
+.app-body {
+  display: block;
+}
+
+.app-body--with-sidebar {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.app-main {
+  min-width: 0;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.app-sidebar h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.app-sidebar__nav {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-link {
+  display: block;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #1e293b;
+  border: 1px solid #dbe7ff;
+  background: #f7faff;
+}
+
+.sidebar-link.active {
+  background: linear-gradient(135deg, #0b5fff, #2563eb);
+  color: #ffffff;
+  border-color: transparent;
 }
 
 .top-navbar {
@@ -1298,6 +1361,38 @@ button.danger {
   background: linear-gradient(180deg, #ffffff, #f8fafc);
 }
 
+.stat-card__label {
+  display: block;
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.stat-card__value {
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+  letter-spacing: -0.02em;
+}
+
+.stat-card--info {
+  border-color: #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff, #ffffff);
+}
+
+.stat-card--warning {
+  border-color: #fcd34d;
+  background: linear-gradient(180deg, #fffbeb, #ffffff);
+}
+
+.stat-card--success {
+  border-color: #99f6e4;
+  background: linear-gradient(180deg, #f0fdfa, #ffffff);
+}
+
+.stat-card--danger {
+  border-color: #fecaca;
+  background: linear-gradient(180deg, #fff1f2, #ffffff);
+}
+
 .chart-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1424,6 +1519,20 @@ button.danger {
   font-size: 13px;
 }
 
+.table-wrap {
+  overflow: auto;
+}
+
+.table-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.table-actions button {
+  margin-top: 0;
+}
+
 .student-table th,
 .student-table td {
   border-bottom: 1px solid #e5e7eb;
@@ -1511,6 +1620,49 @@ button.danger {
   margin: 0 auto;
 }
 
+.auth-layout {
+  display: grid;
+  grid-template-columns: 1.1fr minmax(320px, 520px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.auth-hero {
+  display: grid;
+  gap: 10px;
+  color: #f8fafc;
+  border: none;
+}
+
+.auth-hero h2,
+.auth-hero p {
+  margin: 0;
+}
+
+.auth-hero__list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.auth-hero--login {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(125, 211, 252, 0.35), transparent 42%),
+    linear-gradient(135deg, #0f172a, #0b5fff);
+}
+
+.auth-hero--register {
+  background:
+    radial-gradient(circle at 80% 10%, rgba(45, 212, 191, 0.35), transparent 42%),
+    linear-gradient(135deg, #0f172a, #0f766e);
+}
+
+.form-grid {
+  display: grid;
+  gap: 4px;
+}
+
 .auth-card h2,
 .auth-card p {
   margin-top: 0;
@@ -1518,6 +1670,92 @@ button.danger {
 
 .auth-card button {
   width: 100%;
+}
+
+.profile-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.profile-page__header h2,
+.profile-page__header p {
+  margin: 0;
+}
+
+.status-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.status-chip--approved {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+  color: #115e59;
+}
+
+.status-chip--pending {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.status-chip--student,
+.status-chip--neutral {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.profile-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.profile-form-grid__full {
+  grid-column: 1 / -1;
+}
+
+.student-dashboard-wrap .catalog-hero {
+  border: 1px solid rgba(14, 116, 144, 0.2);
+  background: linear-gradient(150deg, #0b4fd7, #0369a1);
+  color: #f8fafc;
+}
+
+.student-dashboard-wrap .catalog-hero .catalog-hero__subtitle {
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.student-dashboard-wrap .metric-pill {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.student-dashboard-wrap .metric-pill span,
+.student-dashboard-wrap .metric-pill strong {
+  color: #f8fafc;
+}
+
+.teacher-dashboard-wrap .teacher-dashboard-page > .card:first-child {
+  border: 1px solid rgba(20, 83, 45, 0.2);
+  background: linear-gradient(145deg, #f0fdf4, #ffffff);
 }
 
 .hint-box {
@@ -1582,6 +1820,14 @@ button.danger {
 }
 
 @media (max-width: 960px) {
+  .app-body--with-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .app-sidebar {
+    position: static;
+  }
+
   .top-navbar {
     grid-template-columns: 1fr;
     align-items: start;
@@ -1600,7 +1846,8 @@ button.danger {
   .catalog-hero,
   .catalog-toolbar,
   .detail-grid,
-  .layout-grid {
+  .layout-grid,
+  .auth-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1650,6 +1897,10 @@ button.danger {
   }
 
   .teacher-analytics-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-form-grid {
     grid-template-columns: 1fr;
   }
 }

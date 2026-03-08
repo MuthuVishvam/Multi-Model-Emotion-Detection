@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 
+import AppSidebar from "./components/AppSidebar";
 import { fetchCurrentUser, fetchNotifications } from "./services/api";
 import NotificationBell from "./components/NotificationBell";
 import RequireAuth from "./components/RequireAuth";
@@ -15,6 +16,8 @@ import LessonPlayer from "./pages/LessonPlayer";
 import LessonUploadPage from "./pages/LessonUploadPage";
 import LoginPage from "./pages/LoginPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import ProfilePage from "./pages/ProfilePage";
+import RegisterPage from "./pages/RegisterPage";
 import StudentClassesPage from "./pages/StudentClassesPage";
 import StudentProfilePage from "./pages/StudentProfilePage";
 import TeacherClassesPage from "./pages/TeacherClassesPage";
@@ -29,8 +32,8 @@ function getRoleHomePath(user) {
     return "/admin/dashboard";
   }
   if (user.role === "teacher") {
-    const teacherStatus = user.status ?? "approved";
-    const teacherVerified = user.verified ?? true;
+    const teacherStatus = user.status ?? "pending";
+    const teacherVerified = user.verified ?? false;
     return teacherStatus === "approved" && teacherVerified ? "/teacher" : "/profile/teacher";
   }
   return "/student";
@@ -38,8 +41,8 @@ function getRoleHomePath(user) {
 
 function AppNavbar({ user, unreadCount, onLogout }) {
   const homePath = getRoleHomePath(user);
-  const teacherStatus = user?.status ?? "approved";
-  const teacherVerified = user?.verified ?? true;
+  const teacherStatus = user?.status ?? "pending";
+  const teacherVerified = user?.verified ?? false;
   const teacherApproved = teacherStatus === "approved" && teacherVerified;
 
   return (
@@ -49,7 +52,7 @@ function AppNavbar({ user, unreadCount, onLogout }) {
         <span className="top-navbar__subtitle">Emotion-aware course experience</span>
       </div>
 
-      {user && (
+      {user ? (
         <nav className="top-navbar__nav" aria-label="Primary">
           {user.role === "student" && (
             <>
@@ -98,6 +101,15 @@ function AppNavbar({ user, unreadCount, onLogout }) {
             </>
           )}
         </nav>
+      ) : (
+        <nav className="top-navbar__nav" aria-label="Primary">
+          <NavLink to="/login" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
+            Login
+          </NavLink>
+          <NavLink to="/register" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
+            Register
+          </NavLink>
+        </nav>
       )}
 
       {user && (
@@ -116,8 +128,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
-  const teacherStatus = user?.status ?? "approved";
-  const teacherVerified = user?.verified ?? true;
+  const teacherStatus = user?.status ?? "pending";
+  const teacherVerified = user?.verified ?? false;
   const teacherApproved = teacherStatus === "approved" && teacherVerified;
 
   async function loadUnreadCount() {
@@ -166,7 +178,7 @@ export default function App() {
     localStorage.removeItem("token");
     setUser(null);
     setUnreadCount(0);
-    navigate("/", { replace: true });
+    navigate("/login", { replace: true });
   }
 
   if (loading) {
@@ -181,175 +193,193 @@ export default function App() {
     <div className="container app-shell">
       <AppNavbar user={user} unreadCount={unreadCount} onLogout={handleLogout} />
 
-      <Routes>
-        <Route path="/" element={<LoginPage onLogin={handleLogin} />} />
+      <div className={user ? "app-body app-body--with-sidebar" : "app-body"}>
+        {user && <AppSidebar user={user} />}
 
-        <Route
-          path="/student"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <StudentDashboard user={user} />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/student/classes"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <StudentClassesPage />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/student/classes/:classId/lessons"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <ClassLessonsPage />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/student/classes/:classId/lessons/:lessonId"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <LessonPlayer user={user} />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/student/courses/:courseId"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <CourseDetailPage user={user} />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/student/courses/:courseId/lessons/:lessonId"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <LessonPlayer user={user} />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/profile/student"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["student"]}>
-                <StudentProfilePage user={user} onProfileUpdated={handleProfileUpdated} />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/teacher"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["teacher"]}>
-                {teacherApproved
-                  ? <TeacherDashboard user={user} />
-                  : <Navigate to="/profile/teacher" replace />}
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/teacher/classes"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["teacher"]}>
-                {teacherApproved
-                  ? <TeacherClassesPage />
-                  : <Navigate to="/profile/teacher" replace />}
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/teacher/lessons"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["teacher"]}>
-                {teacherApproved
-                  ? <LessonUploadPage />
-                  : <Navigate to="/profile/teacher" replace />}
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/profile/teacher"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["teacher"]}>
-                <TeacherProfilePage user={user} onProfileUpdated={handleProfileUpdated} />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/admin"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["admin"]}>
-                <Navigate to="/admin/dashboard" replace />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/admin/dashboard"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["admin"]}>
-                <AdminDashboard />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/admin/teachers"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["admin"]}>
-                <AdminTeachersPage />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/admin/classes"
-          element={(
-            <RequireAuth user={user}>
-              <RequireRole user={user} allow={["admin"]}>
-                <AdminClassesPage />
-              </RequireRole>
-            </RequireAuth>
-          )}
-        />
-        <Route
-          path="/notifications"
-          element={(
-            <RequireAuth user={user}>
-              <NotificationsPage onUnreadCountChange={setUnreadCount} />
-            </RequireAuth>
-          )}
-        />
-        <Route path="*" element={<Navigate to={getRoleHomePath(user)} replace />} />
-      </Routes>
+        <main className="app-main">
+          <Routes>
+            <Route path="/" element={<Navigate to={user ? getRoleHomePath(user) : "/login"} replace />} />
+            <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
+            <Route path="/register" element={<RegisterPage onLogin={handleLogin} />} />
+
+            <Route
+              path="/student"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <StudentDashboard user={user} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/student/classes"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <StudentClassesPage />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/student/classes/:classId/lessons"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <ClassLessonsPage />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/student/classes/:classId/lessons/:lessonId"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <LessonPlayer user={user} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/student/courses/:courseId"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <CourseDetailPage user={user} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/student/courses/:courseId/lessons/:lessonId"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <LessonPlayer user={user} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/profile"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student", "teacher"]}>
+                    <ProfilePage user={user} onProfileUpdated={handleProfileUpdated} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/profile/student"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <StudentProfilePage user={user} onProfileUpdated={handleProfileUpdated} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/teacher"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["teacher"]}>
+                    {teacherApproved
+                      ? <TeacherDashboard user={user} />
+                      : <Navigate to="/profile/teacher" replace />}
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/teacher/classes"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["teacher"]}>
+                    {teacherApproved
+                      ? <TeacherClassesPage />
+                      : <Navigate to="/profile/teacher" replace />}
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/teacher/lessons"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["teacher"]}>
+                    {teacherApproved
+                      ? <LessonUploadPage />
+                      : <Navigate to="/profile/teacher" replace />}
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/profile/teacher"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["teacher"]}>
+                    <TeacherProfilePage user={user} onProfileUpdated={handleProfileUpdated} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/admin"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["admin"]}>
+                    <Navigate to="/admin/dashboard" replace />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/admin/dashboard"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["admin"]}>
+                    <AdminDashboard />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/admin/teachers"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["admin"]}>
+                    <AdminTeachersPage />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/admin/classes"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["admin"]}>
+                    <AdminClassesPage />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/notifications"
+              element={(
+                <RequireAuth user={user}>
+                  <NotificationsPage onUnreadCountChange={setUnreadCount} />
+                </RequireAuth>
+              )}
+            />
+            <Route path="*" element={<Navigate to={getRoleHomePath(user)} replace />} />
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }

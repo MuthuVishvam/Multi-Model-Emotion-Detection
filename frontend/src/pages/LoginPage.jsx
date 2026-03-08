@@ -1,12 +1,36 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
-import { apiRequest, fetchCurrentUser } from "../services/api";
+import { fetchCurrentUser, loginUser } from "../services/api";
+
+function mapLoginError(message) {
+  const value = String(message || "").toLowerCase();
+  if (value.includes("failed to fetch") || value.includes("network error") || value.includes("timed out")) {
+    return "Cannot connect to backend API. Start backend and verify VITE_API_URL.";
+  }
+  if (value.includes("request failed (404)") || value.includes("request failed (502)") || value.includes("request failed (503)")) {
+    return "Backend API endpoint is unavailable. Check backend URL and deployment.";
+  }
+  if (value.includes("invalid credentials")) {
+    return "Invalid credentials. Check email and password.";
+  }
+  if (value.includes("pending")) {
+    return "Account pending admin approval.";
+  }
+  if (value.includes("rejected")) {
+    return "Account rejected by admin.";
+  }
+  if (value.includes("disabled")) {
+    return "Account disabled by admin.";
+  }
+  return message || "Login failed. Please try again.";
+}
 
 export default function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [roleChoice, setRoleChoice] = useState("teacher");
-  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   async function completeLogin(token) {
     localStorage.setItem("token", token);
@@ -17,46 +41,71 @@ export default function LoginPage({ onLogin }) {
     onLogin(profile);
   }
 
-  async function handleRegister() {
+  async function handleLogin(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
     try {
-      const data = await apiRequest("/auth/register", "POST", { email, password, role: roleChoice });
+      const data = await loginUser({ email: email.trim().toLowerCase(), password });
       await completeLogin(data.access_token);
-    } catch (error) {
-      setMessage(error.message);
-    }
-  }
-
-  async function handleLogin() {
-    try {
-      const data = await apiRequest("/auth/login", "POST", { email, password });
-      await completeLogin(data.access_token);
-    } catch (error) {
-      setMessage(error.message);
+    } catch (err) {
+      setError(mapLoginError(err.message));
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div className="card auth-card">
-      <h2>Login</h2>
-      <p>Select your role, then login to continue.</p>
+    <section className="auth-layout">
+      <article className="card auth-hero auth-hero--login">
+        <p className="eyebrow">Emotion-Based Learning Platform</p>
+        <h2>Learn smarter with real-time emotion insights</h2>
+        <p>
+          Track engagement, manage classes, and deliver adaptive lessons through one modern learning workspace.
+        </p>
+        <ul className="auth-hero__list">
+          <li>Student and teacher role-based portals</li>
+          <li>Multi-modal emotion analytics dashboards</li>
+          <li>Admin-controlled teacher verification flow</li>
+        </ul>
+      </article>
 
-      <label>Role</label>
-      <select value={roleChoice} onChange={(event) => setRoleChoice(event.target.value)}>
-        <option value="teacher">Teacher</option>
-        <option value="student">Student</option>
-      </select>
+      <article className="card auth-card">
+        <h2>Login</h2>
+        <form className="form-grid" onSubmit={handleLogin}>
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="name@example.com"
+              required
+            />
+          </label>
 
-      <label>Email</label>
-      <input value={email} onChange={(event) => setEmail(event.target.value)} />
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter password"
+              required
+            />
+          </label>
 
-      <label>Password</label>
-      <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <button type="submit" disabled={busy}>
+            {busy ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
 
-      <button onClick={handleLogin}>Login</button>
-      <button className="secondary" onClick={handleRegister}>Register as {roleChoice}</button>
-      {message && <p>{message}</p>}
+        {error && <div className="inline-message inline-message-soft">{error}</div>}
 
-    </div>
+        <p className="small-note">
+          New here? <Link to="/register">Create an account</Link>
+        </p>
+      </article>
+    </section>
   );
 }
-

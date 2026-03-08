@@ -1,21 +1,40 @@
-# Deployment Placeholders
+# Deployment Guide (GitHub + Atlas + Render + Vercel)
 
-Use this file as a fill-in template before production deployment.
+This project is deployment-ready for:
+- MongoDB Atlas (database)
+- Render (FastAPI backend)
+- Vercel (React/Vite frontend)
 
-## 1) MongoDB Atlas (Placeholder)
+## 1. Push to GitHub
 
-- Cluster name: `<ATLAS_CLUSTER_NAME>`
-- Database name: `<ATLAS_DB_NAME>`
-- Database user: `<ATLAS_DB_USER>`
-- Network access/IP allowlist: `<ATLAS_IP_RULES>`
-- Connection string (`MONGO_URI`): `<ATLAS_MONGO_URI>`
+From repo root:
 
-## 2) Backend on Render (Placeholder)
+```bash
+git add .
+git commit -m "UI/auth/admin/deployment readiness update"
+git push origin main
+```
 
-- Service name: `<RENDER_BACKEND_SERVICE_NAME>`
-- Region: `<RENDER_REGION>`
-- Branch: `<GIT_BRANCH>`
+Use your deployment branch if not `main`.
+
+## 2. MongoDB Atlas Setup
+
+1. Create or use an Atlas cluster.
+2. Create a DB user with read/write access.
+3. Add network access:
+   - during setup: `0.0.0.0/0`
+   - later: lock down to Render egress if needed.
+4. Copy connection string:
+   - `MONGO_URI=mongodb+srv://<user>:<password>@<cluster>...`
+5. Choose DB name:
+   - `DB_NAME=emotion_platform` (or your preferred name).
+
+## 3. Backend Deploy on Render
+
+Create a new Web Service:
+- Connect GitHub repo.
 - Root directory: `backend`
+- Runtime: Python
 - Build command:
 
 ```bash
@@ -25,44 +44,62 @@ pip install -r requirements.txt
 - Start command:
 
 ```bash
-python run.py
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-- Required environment variables:
+Set environment variables in Render:
 
 ```env
-MONGO_URI=<ATLAS_MONGO_URI>
-DB_NAME=<ATLAS_DB_NAME>
-SECRET_KEY=<BACKEND_SECRET_KEY>
-FRONTEND_ORIGIN=https://<VERCEL_DOMAIN>
+MONGO_URI=<atlas-connection-string>
+DB_NAME=emotion_platform
+SECRET_KEY=<long-random-secret>
+JWT_EXPIRE_MINUTES=120
+FRONTEND_ORIGIN=https://<your-vercel-domain>
 PORT=10000
 ```
 
-## 3) Frontend on Vercel (Placeholder)
+After first deploy:
+- Check health: `https://<render-backend-domain>/health`
+- Check docs: `https://<render-backend-domain>/docs`
 
-- Project name: `<VERCEL_PROJECT_NAME>`
-- Branch: `<GIT_BRANCH>`
+## 4. Frontend Deploy on Vercel
+
+Create new Vercel project:
+- Import same GitHub repo.
 - Root directory: `frontend`
-- Framework preset: `Vite`
+- Framework: Vite
 - Build command: `npm run build`
 - Output directory: `dist`
 
-- Required environment variables:
+Set environment variable in Vercel:
 
 ```env
-VITE_API_URL=https://<RENDER_BACKEND_DOMAIN>
+VITE_API_URL=https://<render-backend-domain>
 ```
 
-## 4) Post-Deploy Checks (Placeholder)
+Deploy and open:
+- `https://<your-vercel-domain>`
 
-- Backend health URL: `https://<RENDER_BACKEND_DOMAIN>/health`
-- API docs URL: `https://<RENDER_BACKEND_DOMAIN>/docs`
-- Frontend URL: `https://<VERCEL_DOMAIN>`
-- CORS check: frontend requests to backend succeed
-- Auth check: login + protected routes pass
+## 5. CORS + Auth Verification
 
-## 5) Optional CI/CD Notes (Placeholder)
+1. Login from deployed frontend.
+2. Confirm API requests go to Render backend (`VITE_API_URL`).
+3. Verify role guards:
+   - student -> student pages
+   - teacher pending/rejected -> blocked from teacher features
+   - admin -> admin dashboard + teacher approvals
+4. Confirm teacher approval flow:
+   - register teacher -> pending
+   - approve in admin -> teacher can access teacher dashboard
 
-- GitHub Actions workflow file: `<.github/workflows/...>`
-- Auto-deploy branch rules: `<DEPLOY_RULES>`
-- Secret storage location: `<GITHUB/RENDER/VERCEL_SECRETS>`
+## 6. Redeploy Flow
+
+For each new change:
+
+1. Push commit to GitHub branch tracked by Render/Vercel.
+2. Render auto-redeploys backend.
+3. Vercel auto-redeploys frontend.
+4. Re-run quick checks:
+   - `/health`
+   - login
+   - admin approve/reject/disable/enable actions

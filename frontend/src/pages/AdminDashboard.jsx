@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import StatCard from "../components/StatCard";
+import TeacherApprovalTable from "../components/TeacherApprovalTable";
 import {
   approveTeacherById,
   disableTeacherById,
@@ -8,21 +10,6 @@ import {
   getPendingTeachers,
   rejectTeacherById,
 } from "../services/adminApi";
-
-function formatDateTime(value) {
-  if (!value) {
-    return "-";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "-";
-  }
-  return parsed.toLocaleString();
-}
-
-function toBoolLabel(value) {
-  return value ? "true" : "false";
-}
 
 export default function AdminDashboard() {
   const [pendingTeachers, setPendingTeachers] = useState([]);
@@ -96,10 +83,11 @@ export default function AdminDashboard() {
   return (
     <div className="learning-page">
       <section className="card">
+        <p className="eyebrow">Admin</p>
         <div className="section-header-row">
           <div>
-            <p className="eyebrow">Admin</p>
             <h2>Admin Dashboard</h2>
+            <p className="small-note">Review teacher onboarding, approvals, and account states.</p>
           </div>
           <button className="secondary" onClick={loadTeachers} disabled={loading}>
             Refresh
@@ -110,128 +98,36 @@ export default function AdminDashboard() {
         {successMessage && <div className="inline-message inline-message-soft">{successMessage}</div>}
 
         <div className="stats-row">
-          <article className="card stat-card">Total Teachers: {summary.totalTeachers}</article>
-          <article className="card stat-card">Pending Teachers: {summary.pendingCount}</article>
-          <article className="card stat-card">Approved Teachers: {summary.approvedCount}</article>
-          <article className="card stat-card">Disabled Teachers: {summary.disabledCount}</article>
+          <StatCard label="Total Teachers" value={summary.totalTeachers} tone="info" />
+          <StatCard label="Pending" value={summary.pendingCount} tone="warning" />
+          <StatCard label="Approved" value={summary.approvedCount} tone="success" />
+          <StatCard label="Disabled" value={summary.disabledCount} tone="danger" />
         </div>
       </section>
 
-      <section className="card">
-        <div className="section-header-row">
-          <h3>Pending Teachers</h3>
-          <span>{pendingTeachers.length} total</span>
-        </div>
+      <TeacherApprovalTable
+        title="Pending Teachers"
+        teachers={pendingTeachers}
+        loading={loading}
+        mode="pending"
+        actingTeacherId={actingTeacherId}
+        onApprove={(id) => handleTeacherAction(id, "approve")}
+        onReject={(id) => handleTeacherAction(id, "reject")}
+        onDisable={(id) => handleTeacherAction(id, "disable")}
+        onEnable={(id) => handleTeacherAction(id, "enable")}
+      />
 
-        {loading ? (
-          <p className="small-note">Loading pending teachers...</p>
-        ) : (
-          <table className="student-table">
-            <thead>
-              <tr>
-                <th>Full Name</th>
-                <th>Email</th>
-                <th>Department</th>
-                <th>Created At</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingTeachers.map((teacher) => {
-                const isBusy = actingTeacherId === teacher.id;
-                const isActive = teacher.is_active !== false;
-                return (
-                  <tr key={teacher.id}>
-                    <td>{teacher.full_name || "-"}</td>
-                    <td>{teacher.email || "-"}</td>
-                    <td>{teacher.department || "-"}</td>
-                    <td>{formatDateTime(teacher.created_at)}</td>
-                    <td>
-                      <button onClick={() => handleTeacherAction(teacher.id, "approve")} disabled={isBusy}>
-                        Approve
-                      </button>
-                      <button className="danger" onClick={() => handleTeacherAction(teacher.id, "reject")} disabled={isBusy}>
-                        Reject
-                      </button>
-                      <button
-                        className="secondary"
-                        onClick={() => handleTeacherAction(teacher.id, isActive ? "disable" : "enable")}
-                        disabled={isBusy}
-                      >
-                        {isActive ? "Disable" : "Enable"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {pendingTeachers.length === 0 && (
-                <tr>
-                  <td colSpan={5}>No pending teachers found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="card">
-        <div className="section-header-row">
-          <h3>All Teachers</h3>
-          <span>{teachers.length} total</span>
-        </div>
-
-        {loading ? (
-          <p className="small-note">Loading teachers...</p>
-        ) : (
-          <table className="student-table">
-            <thead>
-              <tr>
-                <th>Full Name</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Verified</th>
-                <th>Is Active</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teachers.map((teacher) => {
-                const isBusy = actingTeacherId === teacher.id;
-                const isActive = teacher.is_active !== false;
-                return (
-                  <tr key={teacher.id}>
-                    <td>{teacher.full_name || "-"}</td>
-                    <td>{teacher.email || "-"}</td>
-                    <td>{teacher.status || "pending"}</td>
-                    <td>{toBoolLabel(Boolean(teacher.verified))}</td>
-                    <td>{toBoolLabel(isActive)}</td>
-                    <td>
-                      <button onClick={() => handleTeacherAction(teacher.id, "approve")} disabled={isBusy}>
-                        Approve
-                      </button>
-                      <button className="danger" onClick={() => handleTeacherAction(teacher.id, "reject")} disabled={isBusy}>
-                        Reject
-                      </button>
-                      <button
-                        className="secondary"
-                        onClick={() => handleTeacherAction(teacher.id, isActive ? "disable" : "enable")}
-                        disabled={isBusy}
-                      >
-                        {isActive ? "Disable" : "Enable"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {teachers.length === 0 && (
-                <tr>
-                  <td colSpan={6}>No teachers found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <TeacherApprovalTable
+        title="All Teachers"
+        teachers={teachers}
+        loading={loading}
+        mode="all"
+        actingTeacherId={actingTeacherId}
+        onApprove={(id) => handleTeacherAction(id, "approve")}
+        onReject={(id) => handleTeacherAction(id, "reject")}
+        onDisable={(id) => handleTeacherAction(id, "disable")}
+        onEnable={(id) => handleTeacherAction(id, "enable")}
+      />
     </div>
   );
 }

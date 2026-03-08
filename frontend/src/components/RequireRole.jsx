@@ -2,14 +2,14 @@ import { Navigate } from "react-router-dom";
 
 function getRoleHomePath(user) {
   if (!user) {
-    return "/";
+    return "/login";
   }
   if (user.role === "admin") {
     return "/admin/dashboard";
   }
   if (user.role === "teacher") {
-    const teacherStatus = user.status ?? "approved";
-    const teacherVerified = user.verified ?? true;
+    const teacherStatus = user.status ?? "pending";
+    const teacherVerified = user.verified ?? false;
     return teacherStatus === "approved" && teacherVerified ? "/teacher" : "/profile/teacher";
   }
   return "/student";
@@ -17,7 +17,7 @@ function getRoleHomePath(user) {
 
 export default function RequireRole({ user, allow = [], children }) {
   if (!user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace />;
   }
   if (!allow.includes(user.role)) {
     return <Navigate to={getRoleHomePath(user)} replace />;

@@ -1,4 +1,30 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+function normalizeApiBaseUrl(rawUrl = "") {
+  const value = String(rawUrl || "").trim();
+  if (!value) {
+    return "";
+  }
+  return value.replace(/\/+$/, "");
+}
+
+function getRuntimeDefaultApiBaseUrl() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const host = String(window.location?.hostname || "").toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") {
+    return "http://localhost:8000";
+  }
+  return "";
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || getRuntimeDefaultApiBaseUrl()
+);
+
+function buildApiUrl(path) {
+  const safePath = String(path || "").startsWith("/") ? String(path || "") : `/${String(path || "")}`;
+  return API_BASE_URL ? `${API_BASE_URL}${safePath}` : safePath;
+}
 
 function formatErrorDetail(detail, fallback = "Request failed") {
   if (typeof detail === "string" && detail.trim()) {
@@ -72,7 +98,7 @@ export async function apiRequest(path, method = "GET", body = null, token = "", 
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
     try {
       response = await fetchWithTimeout(
-        `${API_BASE_URL}${path}`,
+        buildApiUrl(path),
         {
           method,
           headers,
@@ -98,8 +124,18 @@ export async function apiRequest(path, method = "GET", body = null, token = "", 
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(formatErrorDetail(error?.detail, "Request failed"));
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    let detail = null;
+
+    if (contentType.includes("application/json")) {
+      const error = await response.json().catch(() => ({}));
+      detail = error?.detail;
+    } else {
+      const text = await response.text().catch(() => "");
+      detail = text || null;
+    }
+
+    throw new Error(formatErrorDetail(detail, `Request failed (${response.status})`));
   }
 
   return response.json();
@@ -119,7 +155,7 @@ export async function apiMultipartRequest(path, method = "POST", formData, token
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
     try {
       response = await fetchWithTimeout(
-        `${API_BASE_URL}${path}`,
+        buildApiUrl(path),
         {
           method,
           headers,
@@ -145,8 +181,18 @@ export async function apiMultipartRequest(path, method = "POST", formData, token
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(formatErrorDetail(error?.detail, "Request failed"));
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    let detail = null;
+
+    if (contentType.includes("application/json")) {
+      const error = await response.json().catch(() => ({}));
+      detail = error?.detail;
+    } else {
+      const text = await response.text().catch(() => "");
+      detail = text || null;
+    }
+
+    throw new Error(formatErrorDetail(detail, `Request failed (${response.status})`));
   }
 
   return response.json();
@@ -166,6 +212,28 @@ export async function fetchCurrentUser() {
       return null;
     }
   }
+}
+
+export async function loginUser({ email = "", username = "", password = "" }) {
+  const payload = { password };
+  if (email) {
+    payload.email = email;
+  }
+  if (username) {
+    payload.username = username;
+  }
+  return apiRequest("/auth/login", "POST", payload);
+}
+
+export async function registerUser({ email, password, role = "student", full_name = "", username = "" }) {
+  const payload = { email, password, role };
+  if (full_name) {
+    payload.full_name = full_name;
+  }
+  if (username) {
+    payload.username = username;
+  }
+  return apiRequest("/auth/register", "POST", payload);
 }
 
 export async function updateMyProfile(payload) {

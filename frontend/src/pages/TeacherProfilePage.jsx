@@ -52,48 +52,86 @@ export default function TeacherProfilePage({ user, onProfileUpdated }) {
 
   return (
     <section className="card profile-page">
-      <p className="eyebrow">Teacher Profile</p>
-      <h2>My Profile</h2>
-      <p className="small-note">
-        Status: <strong>{statusText}</strong> | {verifiedText}
-      </p>
+      <div className="profile-page__header">
+        <div>
+          <p className="eyebrow">Teacher Profile</p>
+          <h2>My Profile</h2>
+          <p className="small-note">Complete your profile so admin and students can identify your teaching context.</p>
+        </div>
+        <div className="status-chip-row">
+          <span className={`status-chip ${statusText === "approved" ? "status-chip--approved" : "status-chip--pending"}`}>
+            {statusText}
+          </span>
+          <span className={`status-chip ${user?.verified ? "status-chip--approved" : "status-chip--neutral"}`}>
+            {verifiedText}
+          </span>
+        </div>
+      </div>
 
-      <label>Full Name</label>
-      <input value={form.full_name} onChange={(event) => onFieldChange("full_name", event.target.value)} />
+      <form
+        className="profile-form-grid"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSave();
+        }}
+      >
+        <label>
+          Full Name
+          <input value={form.full_name} onChange={(event) => onFieldChange("full_name", event.target.value)} />
+        </label>
 
-      <label>Email</label>
-      <input value={form.email} onChange={(event) => onFieldChange("email", event.target.value)} />
+        <label>
+          Email
+          <input value={form.email} onChange={(event) => onFieldChange("email", event.target.value)} />
+        </label>
 
-      <label>Username</label>
-      <input value={form.username} onChange={(event) => onFieldChange("username", event.target.value)} />
+        <label>
+          Username
+          <input value={form.username} onChange={(event) => onFieldChange("username", event.target.value)} />
+        </label>
 
-      <label>Phone (optional)</label>
-      <input value={form.phone} onChange={(event) => onFieldChange("phone", event.target.value)} />
+        <label>
+          Phone
+          <input value={form.phone} onChange={(event) => onFieldChange("phone", event.target.value)} />
+        </label>
 
-      <label>Designation (optional)</label>
-      <input value={form.designation} onChange={(event) => onFieldChange("designation", event.target.value)} />
+        <label>
+          Designation
+          <input value={form.designation} onChange={(event) => onFieldChange("designation", event.target.value)} />
+        </label>
 
-      <label>Department (optional)</label>
-      <input value={form.department} onChange={(event) => onFieldChange("department", event.target.value)} />
+        <label>
+          Department
+          <input value={form.department} onChange={(event) => onFieldChange("department", event.target.value)} />
+        </label>
 
-      <label>Experience Years (optional)</label>
-      <input
-        type="number"
-        min="0"
-        value={form.experience_years}
-        onChange={(event) => onFieldChange("experience_years", event.target.value)}
-      />
+        <label>
+          Experience Years
+          <input
+            type="number"
+            min="0"
+            value={form.experience_years}
+            onChange={(event) => onFieldChange("experience_years", event.target.value)}
+          />
+        </label>
 
-      <label>Avatar URL (optional)</label>
-      <input value={form.avatar_url} onChange={(event) => onFieldChange("avatar_url", event.target.value)} />
+        <label>
+          Avatar URL
+          <input value={form.avatar_url} onChange={(event) => onFieldChange("avatar_url", event.target.value)} />
+        </label>
 
-      <label>Bio (optional)</label>
-      <textarea value={form.bio} onChange={(event) => onFieldChange("bio", event.target.value)} />
+        <label className="profile-form-grid__full">
+          Bio
+          <textarea value={form.bio} onChange={(event) => onFieldChange("bio", event.target.value)} />
+        </label>
 
-      <button onClick={handleSave} disabled={saving}>
-        {saving ? "Saving..." : "Save Profile"}
-      </button>
-      {message && <p className="small-note">{message}</p>}
+        <div className="profile-form-grid__full">
+          <button type="submit" disabled={saving}>
+            {saving ? "Saving..." : "Save Profile"}
+          </button>
+          {message && <p className="small-note">{message}</p>}
+        </div>
+      </form>
     </section>
   );
 }

@@ -1,42 +1,41 @@
-# Emotion Learning Platform
+# Multi-Model Emotion Detection Platform
 
-Production-style monorepo for emotion-aware digital learning.
+Monorepo with:
+- `backend/`: FastAPI + MongoDB Atlas + JWT auth
+- `frontend/`: React (Vite) learning platform UI
 
-## Project Structure
+## Monorepo Structure
 
 ```text
-emotion-learning-platform/
-+-- backend/
-+-- frontend/
-+-- docs/
-+-- docker/
-+-- data/
-+-- logs/
-+-- images/
-+-- ml/
-+-- utils/
-+-- .gitignore
-+-- README.md
-+-- deployment.md
+Multi-Model-Emotion-Detection/
+├── backend/
+├── frontend/
+├── ml/
+├── docs/
+├── docker/
+├── data/
+├── logs/
+├── images/
+├── deployment.md
+└── README.md
 ```
 
-## Local Run
+## Local Development
 
-### 1) Backend (FastAPI)
+### Backend (FastAPI)
 
 ```bash
 cd backend
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
-python run.py
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Backend:
-- API base: `http://localhost:8000`
-- Swagger docs: `http://localhost:8000/docs`
+- API: `http://localhost:8000`
+- Docs: `http://localhost:8000/docs`
 
-### 2) Frontend (React + Vite)
+### Frontend (React + Vite)
 
 ```bash
 cd frontend
@@ -44,15 +43,14 @@ npm install
 npm run dev
 ```
 
-Frontend:
-- App URL: `http://localhost:5173`
+- UI: `http://localhost:5173`
 
 ## Environment Variables
 
-### Backend (`backend/.env`)
+### Backend `.env` (`backend/.env`)
 
 ```env
-MONGO_URI=<your-mongodb-atlas-uri>
+MONGO_URI=<your-atlas-uri>
 DB_NAME=emotion_platform
 SECRET_KEY=<your-strong-secret>
 JWT_EXPIRE_MINUTES=120
@@ -60,21 +58,42 @@ FRONTEND_ORIGIN=http://localhost:5173
 PORT=8000
 ```
 
-### Frontend (`frontend/.env`)
+Notes:
+- `SECRET_KEY` is used for JWT signing.
+- `JWT_EXPIRE_MINUTES` is supported by backend settings.
+- `FRONTEND_ORIGIN` is appended to CORS allow list.
+
+### Frontend `.env` (`frontend/.env`)
 
 ```env
 VITE_API_URL=http://localhost:8000
 ```
 
-## Dependencies
+`VITE_API_URL` is used by `frontend/src/api.js` for all API calls.
 
-- Python dependencies: `backend/requirements.txt`
-- Frontend dependencies: `frontend/package.json`
+## Auth + Admin Workflow
 
-## API Docs
+- Student register/login: direct access after registration.
+- Teacher register: stored as pending and blocked from teacher features until admin approval.
+- Teacher lifecycle:
+  - `pending`
+  - `approved`
+  - `rejected`
+- Admin can approve/reject/disable/enable teachers from dashboard.
 
-- OpenAPI Swagger UI: `/docs` (example: `http://localhost:8000/docs`)
+## Key Admin APIs
 
-## Deployment
+- `GET /admin/teachers/pending`
+- `GET /admin/teachers`
+- `POST /admin/teachers/{teacher_id}/approve`
+- `POST /admin/teachers/{teacher_id}/reject`
+- `POST /admin/teachers/{teacher_id}/disable`
+- `POST /admin/teachers/{teacher_id}/enable`
 
-See [deployment.md](./deployment.md) for Render + Vercel + MongoDB Atlas setup placeholders.
+## Production Targets
+
+- Backend: Render
+- Frontend: Vercel
+- Database: MongoDB Atlas
+
+See [deployment.md](./deployment.md) for exact step-by-step deployment and redeployment instructions.
