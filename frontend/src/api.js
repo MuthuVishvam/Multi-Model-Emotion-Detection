@@ -431,3 +431,58 @@ export async function fetchLessonVoiceFeedback({ lessonId, classId = "", limit =
   const query = buildFeedbackQuery({ lessonId, classId, limit });
   return apiRequest(`/feedback/voice${query}`, "GET", null, token);
 }
+
+export async function startLiveClass(payload) {
+  const token = localStorage.getItem("token") || "";
+  return apiRequest("/live-classes/start", "POST", payload, token);
+}
+
+export async function endLiveClass(liveSessionId) {
+  const token = localStorage.getItem("token") || "";
+  return apiRequest(`/live-classes/${liveSessionId}/end`, "POST", null, token);
+}
+
+export async function joinLiveClass(liveSessionId) {
+  const token = localStorage.getItem("token") || "";
+  return apiRequest(`/live-classes/${liveSessionId}/join`, "POST", null, token);
+}
+
+export async function leaveLiveClass(liveSessionId) {
+  const token = localStorage.getItem("token") || "";
+  return apiRequest(`/live-classes/${liveSessionId}/leave`, "POST", null, token);
+}
+
+export async function fetchLiveClass(liveSessionId) {
+  const token = localStorage.getItem("token") || "";
+  return apiRequest(`/live-classes/${liveSessionId}`, "GET", null, token);
+}
+
+function buildLiveAnalyticsQuery({ startAt = "", endAt = "" } = {}) {
+  const params = new URLSearchParams();
+  if (startAt) {
+    params.set("start_at", startAt);
+  }
+  if (endAt) {
+    params.set("end_at", endAt);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function fetchLiveOverallAnalytics(liveSessionId, filters = {}) {
+  const token = localStorage.getItem("token") || "";
+  const query = buildLiveAnalyticsQuery(filters);
+  return apiRequest(`/analytics/live/${liveSessionId}/overall${query}`, "GET", null, token);
+}
+
+export async function fetchLiveModalityAnalytics(liveSessionId, modality, filters = {}) {
+  const token = localStorage.getItem("token") || "";
+  const query = buildLiveAnalyticsQuery(filters);
+  return apiRequest(`/analytics/live/${liveSessionId}/${modality}${query}`, "GET", null, token);
+}
+
+export async function fetchLiveStudentsAnalytics(liveSessionId, filters = {}) {
+  const token = localStorage.getItem("token") || "";
+  const query = buildLiveAnalyticsQuery(filters);
+  return apiRequest(`/analytics/live/${liveSessionId}/students${query}`, "GET", null, token);
+}

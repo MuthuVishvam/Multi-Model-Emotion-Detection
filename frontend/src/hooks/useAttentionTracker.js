@@ -12,7 +12,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-export default function useAttentionTracker(sessionId, lessonId, faceStats = {}) {
+export default function useAttentionTracker(sessionId, lessonId, faceStats = {}, options = {}) {
+  const liveSessionId = String(options.liveSessionId || "");
   const [pendingCount, setPendingCount] = useState(0);
   const [lastState, setLastState] = useState("focused");
   const [lastFlushError, setLastFlushError] = useState("");
@@ -32,7 +33,7 @@ export default function useAttentionTracker(sessionId, lessonId, faceStats = {})
 
   useEffect(() => {
     lastWatchSecondsRef.current = 0;
-  }, [sessionId, lessonId]);
+  }, [sessionId, lessonId, liveSessionId]);
 
   useEffect(() => {
     function markActive() {
@@ -51,7 +52,7 @@ export default function useAttentionTracker(sessionId, lessonId, faceStats = {})
     if (flushBusyRef.current || queueRef.current.length === 0) {
       return;
     }
-    if (!sessionId || !lessonId) {
+    if ((!sessionId && !liveSessionId) || (!lessonId && !liveSessionId)) {
       return;
     }
 
@@ -75,7 +76,7 @@ export default function useAttentionTracker(sessionId, lessonId, faceStats = {})
 
   useEffect(() => {
     const sampleTimer = window.setInterval(() => {
-      if (!sessionId || !lessonId) {
+      if ((!sessionId && !liveSessionId) || (!lessonId && !liveSessionId)) {
         return;
       }
 
@@ -121,15 +122,14 @@ export default function useAttentionTracker(sessionId, lessonId, faceStats = {})
       } else if (multiFace) {
         state = "multi_face";
       } else if (noFaceLong) {
-        state = "no_face";
-      } else if (!isPlaying) {
-        state = "away";
+        state = "no_face_detected";
       }
 
       const event = {
         user_id: userId,
-        lesson_id: lessonId,
-        session_id: sessionId,
+        lesson_id: lessonId || (liveSessionId ? `live:${liveSessionId}` : null),
+        session_id: sessionId || null,
+        live_session_id: liveSessionId || null,
         timestamp: nowIso(),
         state,
         evidence: {
@@ -161,10 +161,10 @@ export default function useAttentionTracker(sessionId, lessonId, faceStats = {})
       window.clearInterval(flushTimer);
       void flushQueue();
     };
-  }, [sessionId, lessonId]);
+  }, [sessionId, lessonId, liveSessionId]);
 
   return {
-    trackingOn: Boolean(sessionId && lessonId),
+    trackingOn: Boolean((sessionId || liveSessionId) && (lessonId || liveSessionId)),
     pendingCount,
     lastState,
     idleSeconds,

@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.rate_limit import enforce_emotion_ingest_rate_limit
 from app.services.emotion_event_analytics import emotion_event_analytics_service
+from app.services.live_class_service import live_class_service
 from app.services.emotion_predictor import predictor_service
 from app.services.text_emotion_baseline import text_emotion_baseline_service
 from app.services.voice_emotion_baseline import voice_emotion_baseline_service
@@ -217,36 +218,64 @@ async def detect_text_emotion_for_message(
     payload: TextEmotionMessageRequest,
     current_user: dict = Depends(get_current_user),
 ) -> TextEmotionMessageResponse:
-    if not ObjectId.is_valid(payload.sessionId):
-        raise HTTPException(status_code=400, detail="Invalid session id")
+    session_id = (payload.sessionId or "").strip() or None
+    live_session_id = (payload.liveSessionId or "").strip() or None
+    if not session_id and not live_session_id:
+        raise HTTPException(status_code=422, detail="sessionId or liveSessionId is required")
 
-    session = await db.sessions.find_one({"_id": ObjectId(payload.sessionId)})
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    lesson_id = (payload.lessonId or "").strip()
-    if not lesson_id:
-        raise HTTPException(status_code=422, detail="lessonId is required")
     class_id = (payload.classId or "").strip() or None
+    lesson_id = (payload.lessonId or "").strip()
+    live_class: dict | None = None
+
+    if session_id:
+        if not ObjectId.is_valid(session_id):
+            raise HTTPException(status_code=400, detail="Invalid session id")
+        session = await db.sessions.find_one({"_id": ObjectId(session_id)})
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+    elif live_session_id:
+        live_class = await live_class_service.get_live_class_for_user(
+            live_session_id=live_session_id,
+            current_user=current_user,
+        )
+        if live_class.get("status") == "ended":
+            raise HTTPException(status_code=400, detail="Live class has ended")
+        if not class_id:
+            class_id = (live_class.get("class_id") or "").strip() or None
+        if not lesson_id:
+            lesson_id = (live_class.get("lesson_id") or "").strip()
+
+    if not lesson_id:
+        if live_session_id:
+            lesson_id = f"live:{live_session_id}"
+        else:
+            raise HTTPException(status_code=422, detail="lessonId is required")
 
     prediction = text_emotion_baseline_service.predict(payload.text)
-    session_text_emotion_counts[payload.sessionId][prediction.emotion] += 1
+    counts_key = session_id or live_session_id or "unknown"
+    session_text_emotion_counts[counts_key][prediction.emotion] += 1
     created_at = datetime.now(timezone.utc)
 
     comment_doc = {
         "user_id": payload.userId,
         "lesson_id": lesson_id,
         "class_id": class_id,
-        "session_id": payload.sessionId,
+        "session_id": session_id,
+        "live_session_id": live_session_id,
         "text": payload.text,
         "predicted_emotion": prediction.emotion,
         "confidence": prediction.confidence,
         "created_at": created_at,
     }
-    comment_result = await db.comments.insert_one(comment_doc)
+    if live_session_id:
+        comment_result = await db.live_chat.insert_one(comment_doc)
+    else:
+        comment_result = await db.comments.insert_one(comment_doc)
 
     await db.emotion_logs.insert_one(
         {
-            "session_id": payload.sessionId,
+            "session_id": session_id,
+            "live_session_id": live_session_id,
             "student_id": payload.userId,
             "course_id": payload.courseId,
             "lesson_id": lesson_id,
@@ -258,7 +287,7 @@ async def detect_text_emotion_for_message(
             "modality": "text_command",
             "client_timestamp": payload.timestamp,
             "suggestion": prediction.suggestion,
-            "session_text_emotion_counts": dict(session_text_emotion_counts[payload.sessionId]),
+            "session_text_emotion_counts": dict(session_text_emotion_counts[counts_key]),
             "logged_by": current_user["email"],
             "created_at": created_at,
         }
@@ -271,7 +300,8 @@ async def detect_text_emotion_for_message(
                 "class_id": class_id,
                 "course_id": payload.courseId,
                 "lesson_id": lesson_id,
-                "session_id": payload.sessionId,
+                "session_id": session_id,
+                "live_session_id": live_session_id,
                 "modality": "text",
                 "emotion_label": prediction.emotion,
                 "confidence": prediction.confidence,
@@ -286,10 +316,11 @@ async def detect_text_emotion_for_message(
         current_user=current_user,
     )
     logger.info(
-        "Text emotion processed user_id=%s lesson_id=%s session_id=%s emotion=%s confidence=%.3f",
+        "Text emotion processed user_id=%s lesson_id=%s session_id=%s live_session_id=%s emotion=%s confidence=%.3f",
         payload.userId,
         lesson_id,
-        payload.sessionId,
+        session_id,
+        live_session_id,
         prediction.emotion,
         float(prediction.confidence),
     )
@@ -315,7 +346,8 @@ async def detect_voice_emotion_for_feedback(
     courseId: str | None = Form(None),
     classId: str | None = Form(None),
     lessonId: str | None = Form(None),
-    sessionId: str = Form(...),
+    sessionId: str | None = Form(None),
+    liveSessionId: str | None = Form(None),
     timestamp: str = Form(...),
     audio_file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
@@ -324,7 +356,8 @@ async def detect_voice_emotion_for_feedback(
     normalized_course_id = (courseId or "").strip() or None
     normalized_class_id = (classId or "").strip() or None
     normalized_lesson_id = (lessonId or "").strip() or None
-    normalized_session_id = (sessionId or "").strip()
+    normalized_session_id = (sessionId or "").strip() or None
+    normalized_live_session_id = (liveSessionId or "").strip() or None
 
     try:
         payload = VoiceEmotionUploadMeta(
@@ -333,21 +366,43 @@ async def detect_voice_emotion_for_feedback(
             classId=normalized_class_id,
             lessonId=normalized_lesson_id,
             sessionId=normalized_session_id,
+            liveSessionId=normalized_live_session_id,
             timestamp=timestamp,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
 
-    if not ObjectId.is_valid(payload.sessionId):
-        raise HTTPException(status_code=400, detail="Invalid session id")
+    session_id = (payload.sessionId or "").strip() or None
+    live_session_id = (payload.liveSessionId or "").strip() or None
+    if not session_id and not live_session_id:
+        raise HTTPException(status_code=422, detail="sessionId or liveSessionId is required")
 
-    session = await db.sessions.find_one({"_id": ObjectId(payload.sessionId)})
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
     lesson_id = (payload.lessonId or "").strip()
-    if not lesson_id:
-        raise HTTPException(status_code=422, detail="lessonId is required")
     class_id = (payload.classId or "").strip() or None
+
+    if session_id:
+        if not ObjectId.is_valid(session_id):
+            raise HTTPException(status_code=400, detail="Invalid session id")
+        session = await db.sessions.find_one({"_id": ObjectId(session_id)})
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+    elif live_session_id:
+        live_class = await live_class_service.get_live_class_for_user(
+            live_session_id=live_session_id,
+            current_user=current_user,
+        )
+        if live_class.get("status") == "ended":
+            raise HTTPException(status_code=400, detail="Live class has ended")
+        if not class_id:
+            class_id = (live_class.get("class_id") or "").strip() or None
+        if not lesson_id:
+            lesson_id = (live_class.get("lesson_id") or "").strip()
+
+    if not lesson_id:
+        if live_session_id:
+            lesson_id = f"live:{live_session_id}"
+        else:
+            raise HTTPException(status_code=422, detail="lessonId is required")
 
     audio_content_type_raw = (audio_file.content_type or "").lower().strip()
     audio_content_type = audio_content_type_raw.split(";", 1)[0].strip() if audio_content_type_raw else ""
@@ -369,22 +424,25 @@ async def detect_voice_emotion_for_feedback(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     logger.info(
-        "Voice emotion processed userId=%s sessionId=%s emotion=%s confidence=%.3f",
+        "Voice emotion processed userId=%s sessionId=%s liveSessionId=%s emotion=%s confidence=%.3f",
         payload.userId,
-        payload.sessionId,
+        session_id,
+        live_session_id,
         prediction.emotion,
         prediction.confidence,
     )
     created_at = datetime.now(timezone.utc)
     original_name = (audio_file.filename or "feedback.wav").strip() or "feedback.wav"
     safe_name = original_name.replace(" ", "_")
-    file_ref = f"voice_feedback/{payload.sessionId}/{int(created_at.timestamp())}_{safe_name}"
+    file_scope_id = live_session_id or session_id or "unknown"
+    file_ref = f"voice_feedback/{file_scope_id}/{int(created_at.timestamp())}_{safe_name}"
 
     voice_feedback_doc = {
         "user_id": payload.userId,
         "lesson_id": lesson_id,
         "class_id": class_id,
-        "session_id": payload.sessionId,
+        "session_id": session_id,
+        "live_session_id": live_session_id,
         "file_ref": file_ref,
         "predicted_emotion": prediction.emotion,
         "confidence": prediction.confidence,
@@ -394,7 +452,8 @@ async def detect_voice_emotion_for_feedback(
 
     await db.emotion_logs.insert_one(
         {
-            "session_id": payload.sessionId,
+            "session_id": session_id,
+            "live_session_id": live_session_id,
             "student_id": payload.userId,
             "course_id": payload.courseId,
             "lesson_id": lesson_id,
@@ -424,7 +483,8 @@ async def detect_voice_emotion_for_feedback(
                 "class_id": class_id,
                 "course_id": payload.courseId,
                 "lesson_id": lesson_id,
-                "session_id": payload.sessionId,
+                "session_id": session_id,
+                "live_session_id": live_session_id,
                 "modality": "voice",
                 "emotion_label": prediction.emotion,
                 "confidence": prediction.confidence,

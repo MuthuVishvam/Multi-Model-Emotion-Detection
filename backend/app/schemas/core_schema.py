@@ -185,8 +185,9 @@ class EmotionEventIn(BaseModel):
     teacher_id: Optional[NonEmptyId] = None
     class_id: Optional[NonEmptyId] = None
     course_id: Optional[NonEmptyId] = None
-    lesson_id: NonEmptyId
-    session_id: NonEmptyId
+    lesson_id: Optional[NonEmptyId] = None
+    session_id: Optional[NonEmptyId] = None
+    live_session_id: Optional[NonEmptyId] = None
     modality: Literal["face", "text", "voice"]
     emotion_label: EmotionLabel
     confidence: float = Field(ge=0.0, le=1.0)
@@ -200,12 +201,14 @@ class EmotionEventBatchRequest(BaseModel):
 
 class AttentionEventIn(BaseModel):
     user_id: NonEmptyId
-    lesson_id: NonEmptyId
-    session_id: NonEmptyId
+    lesson_id: Optional[NonEmptyId] = None
+    session_id: Optional[NonEmptyId] = None
+    live_session_id: Optional[NonEmptyId] = None
     timestamp: datetime
     state: Literal[
         "focused",
         "no_face",
+        "no_face_detected",
         "multi_face",
         "away",
         "tab_hidden",
@@ -368,6 +371,95 @@ class LessonProgressAnalyticsResponse(BaseModel):
     students: list[LessonProgressAnalyticsItem] = Field(default_factory=list)
 
 
+class LiveClassStartRequest(BaseModel):
+    class_id: Optional[NonEmptyId] = None
+    lesson_id: Optional[NonEmptyId] = None
+    title: Optional[Annotated[str, Field(min_length=1, max_length=200)]] = None
+
+
+class LiveClassSessionResponse(BaseModel):
+    live_session_id: str
+    class_id: Optional[str] = None
+    lesson_id: Optional[str] = None
+    teacher_id: str
+    title: str
+    status: Literal["active", "ended"] = "active"
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    created_at: datetime
+    active_students_count: int = 0
+
+
+class LiveClassParticipantResponse(BaseModel):
+    live_session_id: str
+    user_id: str
+    role: Literal["teacher", "student"]
+    is_active: bool
+    joined_at: datetime
+    last_joined_at: datetime
+    left_at: Optional[datetime] = None
+    watch_time_seconds: int = 0
+
+
+class LiveClassEndResponse(BaseModel):
+    live_session_id: str
+    status: Literal["ended"] = "ended"
+    ended_at: datetime
+    active_students_count: int = 0
+    participant_count: int = 0
+
+
+class LiveModalityAnalyticsResponse(BaseModel):
+    live_session_id: str
+    modality: Literal["face", "text", "voice"]
+    total_events: int = 0
+    dominant_emotion: str = "unknown"
+    emotion_counts: dict[str, int] = Field(default_factory=dict)
+    emotion_percentages: dict[str, float] = Field(default_factory=dict)
+    timeline_buckets: list[ModalityTimelineBucket] = Field(default_factory=list)
+    top_negative_comments: list[TextCommentAnalyticsItem] = Field(default_factory=list)
+    feedback_items: list[VoiceFeedbackAnalyticsItem] = Field(default_factory=list)
+
+
+class LiveOverallAnalyticsResponse(BaseModel):
+    live_session_id: str
+    class_id: Optional[str] = None
+    lesson_id: Optional[str] = None
+    title: Optional[str] = None
+    status: Literal["active", "ended"] = "active"
+    total_events: int = 0
+    dominant_emotion: str = "unknown"
+    emotion_counts: dict[str, int] = Field(default_factory=dict)
+    emotion_percentages: dict[str, float] = Field(default_factory=dict)
+    modality_breakdown: dict[str, int] = Field(default_factory=dict)
+    modality_percentages: dict[str, float] = Field(default_factory=dict)
+    engagement_score: float = 0.0
+    active_students_count: int = 0
+    low_attention_alerts: int = 0
+    attention_summary: AttentionSummaryResponse = Field(default_factory=AttentionSummaryResponse)
+
+
+class LiveStudentAnalyticsRow(BaseModel):
+    user_id: str
+    student_name: str
+    watch_time_seconds: int = 0
+    watched_time_min: float = 0.0
+    dominant_emotion: str = "unknown"
+    dominant_face_emotion: str = "unknown"
+    dominant_text_emotion: str = "unknown"
+    dominant_voice_emotion: str = "unknown"
+    attention_state: str = "unknown"
+    attention_state_breakdown: dict[str, int] = Field(default_factory=dict)
+    attention_state_percentages: dict[str, float] = Field(default_factory=dict)
+    no_face_count: int = 0
+    last_seen: Optional[datetime] = None
+
+
+class LiveStudentsAnalyticsResponse(BaseModel):
+    live_session_id: str
+    students: list[LiveStudentAnalyticsRow] = Field(default_factory=list)
+
+
 class LessonAssignRequest(BaseModel):
     class_ids: list[NonEmptyId] = Field(default_factory=list)
     publish_at: Optional[datetime] = None
@@ -436,6 +528,7 @@ class FaceEmotionBatchEvent(BaseModel):
     courseId: Optional[NonEmptyId] = None
     lessonId: Optional[NonEmptyId] = None
     sessionId: NonEmptyId
+    liveSessionId: Optional[NonEmptyId] = None
     timestamp: datetime
     emotion: EmotionLabel
     confidence: float = Field(ge=0.0, le=1.0)
@@ -450,7 +543,8 @@ class TextEmotionMessageRequest(BaseModel):
     courseId: Optional[NonEmptyId] = None
     classId: Optional[NonEmptyId] = None
     lessonId: Optional[NonEmptyId] = None
-    sessionId: NonEmptyId
+    sessionId: Optional[NonEmptyId] = None
+    liveSessionId: Optional[NonEmptyId] = None
     text: MessageText
     timestamp: datetime
 
@@ -460,7 +554,8 @@ class VoiceEmotionUploadMeta(BaseModel):
     courseId: Optional[NonEmptyId] = None
     classId: Optional[NonEmptyId] = None
     lessonId: Optional[NonEmptyId] = None
-    sessionId: NonEmptyId
+    sessionId: Optional[NonEmptyId] = None
+    liveSessionId: Optional[NonEmptyId] = None
     timestamp: datetime
 
 

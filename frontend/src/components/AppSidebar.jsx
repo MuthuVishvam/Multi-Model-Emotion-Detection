@@ -22,6 +22,7 @@ function toSidebarLinks(user) {
         { to: "/teacher", label: "Analytics" },
         { to: "/teacher/classes", label: "My Classes" },
         { to: "/teacher/lessons", label: "Lesson Studio" },
+        { to: "/teacher/live/control", label: "Live Control" },
         ...items,
         { to: "/notifications", label: "Notifications" },
       ];
@@ -35,6 +36,7 @@ function toSidebarLinks(user) {
   return [
     { to: "/student", label: "Course Catalog" },
     { to: "/student/classes", label: "My Classes" },
+    { to: "/student/live", label: "Live Class Room" },
     { to: "/profile/student", label: "My Profile" },
     { to: "/notifications", label: "Notifications" },
   ];

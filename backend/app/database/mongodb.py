@@ -9,6 +9,9 @@ from db.mongo import (
     get_emotion_events_collection,
     get_emotion_logs_collection,
     get_lesson_completions_collection,
+    get_live_chat_collection,
+    get_live_classes_collection,
+    get_live_participants_collection,
     get_lessons_collection,
     get_lesson_assignments_collection,
     get_lesson_progress_collection,
@@ -51,4 +54,7 @@ __all__ = [
     "get_voice_feedback_collection",
     "get_lesson_progress_collection",
     "get_lesson_completions_collection",
+    "get_live_classes_collection",
+    "get_live_participants_collection",
+    "get_live_chat_collection",
 ]

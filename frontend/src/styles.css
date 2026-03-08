@@ -1991,3 +1991,79 @@ button.danger {
     align-items: flex-start;
   }
 }
+
+.live-room-page,
+.live-control-page,
+.live-dashboard-page {
+  display: grid;
+  gap: 16px;
+}
+
+.live-room-join {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.live-room-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.live-room-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 16px;
+}
+
+.live-room-main,
+.live-room-chat {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.live-room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.live-control-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.live-control-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+
+@media (max-width: 1040px) {
+  .live-room-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .live-room-layout,
+  .live-control-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .live-room-join {
+    grid-template-columns: 1fr;
+  }
+
+  .live-room-metrics {
+    grid-template-columns: 1fr;
+  }
+}

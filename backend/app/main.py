@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db.indexes import ensure_platform_indexes
 from app.routes import admin_routes, analytics_routes, auth_routes, class_routes, emotion_routes, lesson_routes
-from app.routers import attention, dashboard, feedback, health, notifications, reports, sessions, users
+from app.routers import attention, dashboard, feedback, health, live_classes, notifications, reports, sessions, users
 from db.mongo import close_mongo_connection, init_mongo_connection, ping_database
 
 
@@ -110,5 +110,6 @@ app.include_router(admin_routes.router)
 app.include_router(class_routes.router)
 app.include_router(notifications.router)
 app.include_router(attention.router)
+app.include_router(live_classes.router)
 app.include_router(analytics_routes.router)
 app.include_router(feedback.router)

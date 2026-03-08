@@ -13,6 +13,9 @@ import StudentDashboard from "./pages/StudentDashboard";
 import CourseDetailPage from "./pages/CourseDetailPage";
 import ClassLessonsPage from "./pages/ClassLessonsPage";
 import LessonPlayer from "./pages/LessonPlayer";
+import LiveClassControl from "./pages/LiveClassControl";
+import LiveClassRoom from "./pages/LiveClassRoom";
+import LiveEmotionDashboard from "./pages/LiveEmotionDashboard";
 import LessonUploadPage from "./pages/LessonUploadPage";
 import LoginPage from "./pages/LoginPage";
 import NotificationsPage from "./pages/NotificationsPage";
@@ -62,6 +65,9 @@ function AppNavbar({ user, unreadCount, onLogout }) {
               <NavLink to="/student/classes" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
                 My Classes
               </NavLink>
+              <NavLink to="/student/live" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
+                Live Class
+              </NavLink>
               <NavLink to="/profile/student" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
                 Profile
               </NavLink>
@@ -79,6 +85,9 @@ function AppNavbar({ user, unreadCount, onLogout }) {
                   </NavLink>
                   <NavLink to="/teacher/lessons" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
                     Lessons
+                  </NavLink>
+                  <NavLink to="/teacher/live/control" className={({ isActive }) => isActive ? "nav-pill active" : "nav-pill"}>
+                    Live Control
                   </NavLink>
                 </>
               )}
@@ -243,6 +252,16 @@ export default function App() {
               )}
             />
             <Route
+              path="/student/live"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["student"]}>
+                    <LiveClassRoom user={user} />
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
               path="/student/courses/:courseId"
               element={(
                 <RequireAuth user={user}>
@@ -313,6 +332,30 @@ export default function App() {
                   <RequireRole user={user} allow={["teacher"]}>
                     {teacherApproved
                       ? <LessonUploadPage />
+                      : <Navigate to="/profile/teacher" replace />}
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/teacher/live/control"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["teacher"]}>
+                    {teacherApproved
+                      ? <LiveClassControl />
+                      : <Navigate to="/profile/teacher" replace />}
+                  </RequireRole>
+                </RequireAuth>
+              )}
+            />
+            <Route
+              path="/teacher/live/dashboard/:liveSessionId"
+              element={(
+                <RequireAuth user={user}>
+                  <RequireRole user={user} allow={["teacher"]}>
+                    {teacherApproved
+                      ? <LiveEmotionDashboard />
                       : <Navigate to="/profile/teacher" replace />}
                   </RequireRole>
                 </RequireAuth>

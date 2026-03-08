@@ -125,6 +125,7 @@ export default function AudioFeedbackRecorder({
   classId,
   lessonId,
   sessionId,
+  liveSessionId,
   onPrediction,
   onStatusMessage,
 }) {
@@ -171,14 +172,16 @@ export default function AudioFeedbackRecorder({
     const normalizedClassId = String(classId || "").trim();
     const normalizedLessonId = String(lessonId || "").trim();
     const normalizedSessionId = String(sessionId || "").trim();
+    const normalizedLiveSessionId = String(liveSessionId || "").trim();
 
     if (!normalizedUserId) {
       throw new Error("Missing user information. Please sign in again.");
     }
-    if (!normalizedSessionId) {
-      throw new Error("Start a session first before recording feedback.");
+    if (!normalizedSessionId && !normalizedLiveSessionId) {
+      throw new Error("Join a live class or start a session first before recording feedback.");
     }
-    if (!normalizedLessonId) {
+    const effectiveLessonId = normalizedLessonId || (normalizedLiveSessionId ? `live:${normalizedLiveSessionId}` : "");
+    if (!effectiveLessonId) {
       throw new Error("Open a lesson before recording voice feedback.");
     }
 
@@ -191,8 +194,13 @@ export default function AudioFeedbackRecorder({
     if (normalizedClassId) {
       formData.append("classId", normalizedClassId);
     }
-    formData.append("lessonId", normalizedLessonId);
-    formData.append("sessionId", normalizedSessionId);
+    formData.append("lessonId", effectiveLessonId);
+    if (normalizedSessionId) {
+      formData.append("sessionId", normalizedSessionId);
+    }
+    if (normalizedLiveSessionId) {
+      formData.append("liveSessionId", normalizedLiveSessionId);
+    }
     formData.append("timestamp", timestamp);
     formData.append("audio_file", blob, filename);
 
@@ -245,6 +253,7 @@ export default function AudioFeedbackRecorder({
       console.debug("[MELD][Voice] upload processed", {
         lessonId,
         sessionId,
+        liveSessionId,
         emotion: prediction?.emotion,
         confidence: Number(prediction?.confidence || 0),
       });
@@ -278,8 +287,8 @@ export default function AudioFeedbackRecorder({
   }
 
   async function startRecording() {
-    if (!sessionId) {
-      setErrorText("Start a session first before recording feedback.");
+    if (!sessionId && !liveSessionId) {
+      setErrorText("Join a live class or start a session first before recording feedback.");
       setUploadState("failed");
       return;
     }
@@ -359,7 +368,7 @@ export default function AudioFeedbackRecorder({
 
       <div className="audio-recorder__actions">
         {!isRecording && (
-          <button type="button" onClick={startRecording} disabled={isUploading || !sessionId}>
+          <button type="button" onClick={startRecording} disabled={isUploading || (!sessionId && !liveSessionId)}>
             Record Feedback
           </button>
         )}

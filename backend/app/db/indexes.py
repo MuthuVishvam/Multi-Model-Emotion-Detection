@@ -143,7 +143,14 @@ async def ensure_platform_indexes() -> None:
     await _create_index_safe(db.emotion_events, [("class_id", ASCENDING), ("lesson_id", ASCENDING)], name="emotion_events_class_lesson")
     await _create_index_safe(db.emotion_events, [("lesson_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_lesson_id_timestamp")
     await _create_index_safe(db.emotion_events, [("lesson_id", ASCENDING), ("modality", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_lesson_modality_timestamp")
+    await _create_index_safe(db.emotion_events, [("live_session_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_live_session_timestamp")
+    await _create_index_safe(
+        db.emotion_events,
+        [("live_session_id", ASCENDING), ("modality", ASCENDING), ("timestamp", DESCENDING)],
+        name="emotion_events_live_session_modality_timestamp",
+    )
     await _create_index_safe(db.emotion_events, [("user_id", ASCENDING), ("lesson_id", ASCENDING)], name="emotion_events_user_lesson")
+    await _create_index_safe(db.emotion_events, [("user_id", ASCENDING), ("live_session_id", ASCENDING)], name="emotion_events_user_live_session")
     await _create_index_safe(db.emotion_events, [("session_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_session_timestamp")
 
     await _create_index_safe(
@@ -206,6 +213,12 @@ async def ensure_platform_indexes() -> None:
     await _create_index_safe(db.attention_events, [("lesson_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_lesson_timestamp")
     await _create_index_safe(db.attention_events, [("user_id", ASCENDING), ("lesson_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_user_lesson_timestamp")
     await _create_index_safe(db.attention_events, [("session_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_session_timestamp")
+    await _create_index_safe(db.attention_events, [("live_session_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_live_session_timestamp")
+    await _create_index_safe(
+        db.attention_events,
+        [("user_id", ASCENDING), ("live_session_id", ASCENDING), ("timestamp", DESCENDING)],
+        name="attention_events_user_live_session_timestamp",
+    )
 
     await _create_index_safe(
         db.comments,
@@ -222,6 +235,11 @@ async def ensure_platform_indexes() -> None:
         [("session_id", ASCENDING), ("created_at", DESCENDING)],
         name="comments_session_created_at",
     )
+    await _create_index_safe(
+        db.comments,
+        [("live_session_id", ASCENDING), ("created_at", DESCENDING)],
+        name="comments_live_session_created_at",
+    )
 
     await _create_index_safe(
         db.voice_feedback,
@@ -237,6 +255,63 @@ async def ensure_platform_indexes() -> None:
         db.voice_feedback,
         [("session_id", ASCENDING), ("created_at", DESCENDING)],
         name="voice_feedback_session_created_at",
+    )
+    await _create_index_safe(
+        db.voice_feedback,
+        [("live_session_id", ASCENDING), ("created_at", DESCENDING)],
+        name="voice_feedback_live_session_created_at",
+    )
+
+    await _create_index_safe(
+        db.live_classes,
+        [("live_session_id", ASCENDING)],
+        unique=True,
+        name="live_classes_live_session_id_uq",
+        partialFilterExpression={"live_session_id": {"$type": "string"}},
+    )
+    await _create_index_safe(
+        db.live_classes,
+        [("teacher_id", ASCENDING), ("status", ASCENDING), ("started_at", DESCENDING)],
+        name="live_classes_teacher_status_started_at",
+    )
+    await _create_index_safe(
+        db.live_classes,
+        [("class_id", ASCENDING), ("status", ASCENDING), ("started_at", DESCENDING)],
+        name="live_classes_class_status_started_at",
+    )
+    await _create_index_safe(
+        db.live_classes,
+        [("status", ASCENDING), ("started_at", DESCENDING)],
+        name="live_classes_status_started_at",
+    )
+
+    await _create_index_safe(
+        db.live_participants,
+        [("live_session_id", ASCENDING), ("user_id", ASCENDING)],
+        unique=True,
+        name="live_participants_session_user_uq",
+        partialFilterExpression={"live_session_id": {"$type": "string"}, "user_id": {"$type": "string"}},
+    )
+    await _create_index_safe(
+        db.live_participants,
+        [("live_session_id", ASCENDING), ("is_active", ASCENDING), ("role", ASCENDING)],
+        name="live_participants_session_active_role",
+    )
+    await _create_index_safe(
+        db.live_participants,
+        [("user_id", ASCENDING), ("joined_at", DESCENDING)],
+        name="live_participants_user_joined_at",
+    )
+
+    await _create_index_safe(
+        db.live_chat,
+        [("live_session_id", ASCENDING), ("created_at", DESCENDING)],
+        name="live_chat_session_created_at",
+    )
+    await _create_index_safe(
+        db.live_chat,
+        [("user_id", ASCENDING), ("live_session_id", ASCENDING), ("created_at", DESCENDING)],
+        name="live_chat_user_session_created_at",
     )
 
     await _create_index_safe(

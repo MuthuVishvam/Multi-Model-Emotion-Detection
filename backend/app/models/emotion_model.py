@@ -15,7 +15,8 @@ class SessionDocument(BaseModel):
 
 
 class EmotionEventDocument(BaseModel):
-    session_id: str
+    session_id: Optional[str] = None
+    live_session_id: Optional[str] = None
     modality: Literal["face", "text", "voice"]
     emotion_label: str
     confidence: float = Field(ge=0.0, le=1.0)
@@ -24,7 +25,8 @@ class EmotionEventDocument(BaseModel):
 
 
 class AttentionEventDocument(BaseModel):
-    session_id: str
-    state: Literal["focused", "tab_hidden", "idle", "no_face", "multi_face", "possible_distraction"]
+    session_id: Optional[str] = None
+    live_session_id: Optional[str] = None
+    state: Literal["focused", "tab_hidden", "idle", "no_face", "no_face_detected", "multi_face", "possible_distraction"]
     timestamp: datetime
     evidence: dict = Field(default_factory=dict)

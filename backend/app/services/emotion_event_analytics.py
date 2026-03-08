@@ -26,6 +26,7 @@ NEGATIVE_TEXT_EMOTIONS = {
 ATTENTION_STATE_ORDER = (
     "focused",
     "no_face",
+    "no_face_detected",
     "away",
     "tab_hidden",
     "idle",
@@ -253,52 +254,69 @@ class EmotionEventAnalyticsService:
 
         now = _utc_now()
         rows: list[dict] = []
+        skipped_count = 0
         for event in events:
             teacher_id = event.get("teacher_id")
             if not teacher_id and current_user.get("role") == "teacher":
                 teacher_id = current_user.get("id")
 
-            rows.append(
-                {
-                    "user_id": event.get("user_id"),
-                    "teacher_id": teacher_id,
-                    "class_id": event.get("class_id"),
-                    "course_id": event.get("course_id"),
-                    "lesson_id": event.get("lesson_id"),
-                    "session_id": event.get("session_id"),
-                    "modality": event.get("modality"),
-                    "emotion_label": event.get("emotion_label"),
-                    "confidence": float(event.get("confidence") or 0.0),
-                    "timestamp": event.get("timestamp") or now,
-                    "extra": event.get("extra") or {},
-                    "created_at": now,
-                }
-            )
+            row = {
+                "user_id": event.get("user_id"),
+                "teacher_id": teacher_id,
+                "class_id": event.get("class_id"),
+                "course_id": event.get("course_id"),
+                "lesson_id": event.get("lesson_id"),
+                "session_id": event.get("session_id"),
+                "live_session_id": event.get("live_session_id"),
+                "modality": event.get("modality"),
+                "emotion_label": event.get("emotion_label"),
+                "confidence": float(event.get("confidence") or 0.0),
+                "timestamp": event.get("timestamp") or now,
+                "extra": event.get("extra") or {},
+                "created_at": now,
+            }
+            if not row.get("lesson_id") and not row.get("live_session_id"):
+                skipped_count += 1
+                continue
+            rows.append(row)
+
+        if not rows:
+            return {"inserted_count": 0, "skipped_count": max(skipped_count, len(events))}
 
         try:
             await db.emotion_events.insert_many(rows)
-            return {"inserted_count": len(rows), "skipped_count": 0}
+            return {"inserted_count": len(rows), "skipped_count": skipped_count}
         except (AttributeError, RuntimeError) as exc:
             logger.warning("Skipping emotion_events ingest reason=%s", str(exc))
-            return {"inserted_count": 0, "skipped_count": len(rows)}
+            return {"inserted_count": 0, "skipped_count": len(rows) + skipped_count}
 
     async def ingest_attention_events(self, *, events: list[dict]) -> dict:
         if not events:
             return {"inserted_count": 0, "skipped_count": 0}
 
         now = _utc_now()
-        rows = [
-            {
+        rows = []
+        for event in events:
+            state = str(event.get("state") or "").strip() or "focused"
+            if state == "no_face":
+                state = "no_face_detected"
+
+            row = {
                 "user_id": event.get("user_id"),
                 "lesson_id": event.get("lesson_id"),
                 "session_id": event.get("session_id"),
+                "live_session_id": event.get("live_session_id"),
                 "timestamp": event.get("timestamp") or now,
-                "state": event.get("state"),
+                "state": state,
                 "evidence": event.get("evidence") or {},
                 "created_at": now,
             }
-            for event in events
-        ]
+            if not row.get("lesson_id") and not row.get("live_session_id"):
+                continue
+            rows.append(row)
+
+        if not rows:
+            return {"inserted_count": 0, "skipped_count": len(events)}
         try:
             await db.attention_events.insert_many(rows)
             return {"inserted_count": len(rows), "skipped_count": 0}
@@ -520,6 +538,489 @@ class EmotionEventAnalyticsService:
                 "percentages": attention_percentages,
             },
         }
+
+    @classmethod
+    def _live_emotion_match(
+        cls,
+        *,
+        live_session_id: str,
+        modality: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict:
+        match_query: dict = {"live_session_id": live_session_id}
+        if modality:
+            match_query["modality"] = modality
+        timestamp_query = cls._build_time_query(start_at, end_at)
+        if timestamp_query:
+            match_query["timestamp"] = timestamp_query
+        return match_query
+
+    @classmethod
+    def _live_attention_match(
+        cls,
+        *,
+        live_session_id: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict:
+        match_query: dict = {"live_session_id": live_session_id}
+        timestamp_query = cls._build_time_query(start_at, end_at)
+        if timestamp_query:
+            match_query["timestamp"] = timestamp_query
+        return match_query
+
+    async def get_live_modality_analytics(
+        self,
+        *,
+        live_session_id: str,
+        modality: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict:
+        match_query = self._live_emotion_match(
+            live_session_id=live_session_id,
+            modality=modality,
+            start_at=start_at,
+            end_at=end_at,
+        )
+
+        emotion_counts_rows, timeline_rows = await asyncio.gather(
+            db.emotion_events.aggregate(self._emotion_counts_pipeline(match_query)).to_list(length=None),
+            db.emotion_events.aggregate(self._timeline_pipeline(match_query)).to_list(length=None),
+        )
+        emotion_counts = {row["_id"]: _safe_int(row["count"]) for row in emotion_counts_rows if row.get("_id")}
+        total_events = int(sum(emotion_counts.values()))
+        dominant_emotion = _dominant_label(emotion_counts)
+
+        timeline_buckets = [
+            {
+                "minute": row.get("minute"),
+                "total": _safe_int(row.get("total")),
+                "emotions": {k: _safe_int(v) for k, v in (row.get("emotions") or {}).items()},
+            }
+            for row in timeline_rows
+        ]
+
+        top_negative_comments: list[dict] = []
+        feedback_items: list[dict] = []
+
+        if modality == "text":
+            negative_match = dict(match_query)
+            negative_match["emotion_label"] = {"$in": sorted(NEGATIVE_TEXT_EMOTIONS)}
+            negative_rows = await db.emotion_events.aggregate(
+                [
+                    {"$match": negative_match},
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "user_id": 1,
+                            "emotion_label": 1,
+                            "confidence": 1,
+                            "timestamp": 1,
+                            "extra": 1,
+                        }
+                    },
+                    {"$sort": {"confidence": -1, "timestamp": -1}},
+                    {"$limit": 50},
+                ]
+            ).to_list(length=None)
+            comment_user_ids = [str(row.get("user_id")) for row in negative_rows if row.get("user_id")]
+            labels = await self._resolve_student_labels(comment_user_ids)
+            for row in negative_rows:
+                user_id = str(row.get("user_id") or "")
+                comment = _extract_text_comment(row.get("extra") or {})
+                if not user_id or not comment:
+                    continue
+                top_negative_comments.append(
+                    {
+                        "user_id": user_id,
+                        "student_name": labels.get(user_id, user_id),
+                        "comment": comment,
+                        "emotion_label": row.get("emotion_label") or "unknown",
+                        "confidence": _safe_float(row.get("confidence")),
+                        "timestamp": row.get("timestamp") or _utc_now(),
+                    }
+                )
+                if len(top_negative_comments) >= 10:
+                    break
+
+        if modality == "voice":
+            voice_rows = await db.emotion_events.aggregate(
+                [
+                    {"$match": match_query},
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "user_id": 1,
+                            "emotion_label": 1,
+                            "confidence": 1,
+                            "timestamp": 1,
+                            "extra": 1,
+                        }
+                    },
+                    {"$sort": {"timestamp": -1}},
+                    {"$limit": 50},
+                ]
+            ).to_list(length=None)
+            voice_user_ids = [str(row.get("user_id")) for row in voice_rows if row.get("user_id")]
+            labels = await self._resolve_student_labels(voice_user_ids)
+            for row in voice_rows:
+                user_id = str(row.get("user_id") or "")
+                if not user_id:
+                    continue
+                extra = row.get("extra") or {}
+                feedback = _extract_text_comment(extra) or "Voice feedback sample"
+                feedback_items.append(
+                    {
+                        "user_id": user_id,
+                        "student_name": labels.get(user_id, user_id),
+                        "feedback": feedback,
+                        "emotion_label": row.get("emotion_label") or "unknown",
+                        "confidence": _safe_float(row.get("confidence")),
+                        "timestamp": row.get("timestamp") or _utc_now(),
+                        "audio_duration": _safe_float(extra.get("audio_duration"), default=0.0) or None,
+                    }
+                )
+
+        return {
+            "live_session_id": live_session_id,
+            "modality": modality,
+            "total_events": total_events,
+            "dominant_emotion": dominant_emotion,
+            "emotion_counts": emotion_counts,
+            "emotion_percentages": _percentages(emotion_counts, total_events),
+            "timeline_buckets": timeline_buckets,
+            "top_negative_comments": top_negative_comments,
+            "feedback_items": feedback_items,
+        }
+
+    async def get_live_overall_analytics(
+        self,
+        *,
+        live_session_id: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict:
+        emotion_match = self._live_emotion_match(
+            live_session_id=live_session_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        attention_match = self._live_attention_match(
+            live_session_id=live_session_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+
+        live_class, modality_rows, emotion_rows, attention_rows, active_students_count, attention_user_rows = await asyncio.gather(
+            db.live_classes.find_one({"live_session_id": live_session_id}),
+            db.emotion_events.aggregate(self._modality_counts_pipeline(emotion_match)).to_list(length=None),
+            db.emotion_events.aggregate(self._emotion_counts_pipeline(emotion_match)).to_list(length=None),
+            db.attention_events.aggregate(
+                [
+                    {"$match": attention_match},
+                    {"$group": {"_id": "$state", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                ]
+            ).to_list(length=None),
+            db.live_participants.count_documents(
+                {"live_session_id": live_session_id, "role": "student", "is_active": True}
+            ),
+            db.attention_events.aggregate(
+                [
+                    {"$match": attention_match},
+                    {"$group": {"_id": {"user_id": "$user_id", "state": "$state"}, "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+        )
+
+        modality_breakdown = {row["_id"]: _safe_int(row["count"]) for row in modality_rows if row.get("_id")}
+        modality_total = int(sum(modality_breakdown.values()))
+        modality_percentages = _percentages(modality_breakdown, modality_total)
+
+        emotion_counts = {row["_id"]: _safe_int(row["count"]) for row in emotion_rows if row.get("_id")}
+        total_events = int(sum(emotion_counts.values()))
+        dominant_emotion = _dominant_label(emotion_counts)
+
+        attention_counts = {row["_id"]: _safe_int(row["count"]) for row in attention_rows if row.get("_id")}
+        attention_total = int(sum(attention_counts.values()))
+        attention_percentages = _percentages(attention_counts, attention_total)
+
+        emotion_weight_map = {
+            "joy": 1.0,
+            "interest": 0.95,
+            "neutral": 0.7,
+            "surprise": 0.65,
+            "confusion": 0.4,
+            "stress": 0.3,
+            "sadness": 0.25,
+            "anger": 0.2,
+            "fear": 0.2,
+            "disgust": 0.2,
+            "boredom": 0.1,
+        }
+        weighted_sum = sum(
+            emotion_weight_map.get(label.lower(), 0.5) * count for label, count in emotion_counts.items()
+        )
+        emotion_component = (weighted_sum / total_events) * 100.0 if total_events > 0 else 0.0
+        focused_count = int(attention_counts.get("focused", 0))
+        attention_component = ((focused_count / attention_total) * 100.0) if attention_total > 0 else 0.0
+        engagement_score = round((emotion_component * 0.7) + (attention_component * 0.3), 2) if attention_total > 0 else round(emotion_component, 2)
+
+        attention_by_user: dict[str, dict[str, int]] = {}
+        for row in attention_user_rows:
+            key = row.get("_id") or {}
+            user_id = str(key.get("user_id") or "")
+            state = str(key.get("state") or "")
+            if not user_id or not state:
+                continue
+            attention_by_user.setdefault(user_id, {})
+            attention_by_user[user_id][state] = _safe_int(row.get("count"))
+
+        low_attention_alerts = 0
+        for _, state_counts in attention_by_user.items():
+            focused = _safe_int(state_counts.get("focused"))
+            non_focused = (
+                _safe_int(state_counts.get("no_face_detected"))
+                + _safe_int(state_counts.get("tab_hidden"))
+                + _safe_int(state_counts.get("idle"))
+                + _safe_int(state_counts.get("multi_face"))
+                + _safe_int(state_counts.get("possible_distraction"))
+            )
+            if non_focused >= 3 and non_focused >= focused:
+                low_attention_alerts += 1
+
+        class_id = str((live_class or {}).get("class_id") or "") or None
+        lesson_id = str((live_class or {}).get("lesson_id") or "") or None
+        title = str((live_class or {}).get("title") or "") or None
+        status_value = str((live_class or {}).get("status") or "active")
+        if status_value not in {"active", "ended"}:
+            status_value = "active"
+
+        return {
+            "live_session_id": live_session_id,
+            "class_id": class_id,
+            "lesson_id": lesson_id,
+            "title": title,
+            "status": status_value,
+            "total_events": total_events,
+            "dominant_emotion": dominant_emotion,
+            "emotion_counts": emotion_counts,
+            "emotion_percentages": _percentages(emotion_counts, total_events),
+            "modality_breakdown": modality_breakdown,
+            "modality_percentages": modality_percentages,
+            "engagement_score": engagement_score,
+            "active_students_count": _safe_int(active_students_count),
+            "low_attention_alerts": low_attention_alerts,
+            "attention_summary": {
+                "total_events": attention_total,
+                "counts": attention_counts,
+                "percentages": attention_percentages,
+            },
+        }
+
+    async def get_students_live_analytics(
+        self,
+        *,
+        live_session_id: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict:
+        emotion_match = self._live_emotion_match(
+            live_session_id=live_session_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        attention_match = self._live_attention_match(
+            live_session_id=live_session_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+
+        (
+            live_class,
+            emotion_user_rows,
+            modality_emotion_rows,
+            emotion_span_rows,
+            attention_rows,
+            face_no_face_rows,
+            live_participants_rows,
+        ) = await asyncio.gather(
+            db.live_classes.find_one({"live_session_id": live_session_id}),
+            db.emotion_events.aggregate(
+                [
+                    {"$match": emotion_match},
+                    {"$group": {"_id": {"user_id": "$user_id", "emotion": "$emotion_label"}, "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+            db.emotion_events.aggregate(
+                [
+                    {"$match": emotion_match},
+                    {"$group": {"_id": {"user_id": "$user_id", "modality": "$modality", "emotion": "$emotion_label"}, "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+            db.emotion_events.aggregate(
+                [
+                    {"$match": emotion_match},
+                    {"$group": {"_id": "$user_id", "min_ts": {"$min": "$timestamp"}, "max_ts": {"$max": "$timestamp"}}},
+                ]
+            ).to_list(length=None),
+            db.attention_events.aggregate(
+                [
+                    {"$match": attention_match},
+                    {"$group": {"_id": {"user_id": "$user_id", "state": "$state"}, "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+            db.emotion_events.aggregate(
+                [
+                    {"$match": {**emotion_match, "modality": "face", "emotion_label": "no_face_detected"}},
+                    {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+            db.live_participants.find({"live_session_id": live_session_id}).to_list(length=None),
+        )
+
+        teacher_id = str((live_class or {}).get("teacher_id") or "")
+        now = _utc_now()
+
+        emotion_by_user: dict[str, dict[str, int]] = {}
+        for row in emotion_user_rows:
+            key = row.get("_id") or {}
+            user_id = str(key.get("user_id") or "")
+            emotion = str(key.get("emotion") or "")
+            if not user_id or not emotion or user_id == teacher_id:
+                continue
+            emotion_by_user.setdefault(user_id, {})
+            emotion_by_user[user_id][emotion] = _safe_int(row.get("count"))
+
+        modality_emotions_by_user: dict[str, dict[str, dict[str, int]]] = {}
+        for row in modality_emotion_rows:
+            key = row.get("_id") or {}
+            user_id = str(key.get("user_id") or "")
+            modality = str(key.get("modality") or "")
+            emotion = str(key.get("emotion") or "")
+            if not user_id or not modality or not emotion or user_id == teacher_id:
+                continue
+            modality_emotions_by_user.setdefault(user_id, {})
+            modality_emotions_by_user[user_id].setdefault(modality, {})
+            modality_emotions_by_user[user_id][modality][emotion] = _safe_int(row.get("count"))
+
+        emotion_span_by_user: dict[str, dict] = {}
+        for row in emotion_span_rows:
+            user_id = str(row.get("_id") or "")
+            if not user_id or user_id == teacher_id:
+                continue
+            emotion_span_by_user[user_id] = {
+                "min_ts": row.get("min_ts"),
+                "max_ts": row.get("max_ts"),
+            }
+
+        attention_by_user: dict[str, dict[str, int]] = {}
+        for row in attention_rows:
+            key = row.get("_id") or {}
+            user_id = str(key.get("user_id") or "")
+            state = str(key.get("state") or "")
+            if not user_id or not state or user_id == teacher_id:
+                continue
+            attention_by_user.setdefault(user_id, {})
+            attention_by_user[user_id][state] = _safe_int(row.get("count"))
+
+        face_no_face_by_user: dict[str, int] = {}
+        for row in face_no_face_rows:
+            user_id = str(row.get("_id") or "")
+            if not user_id or user_id == teacher_id:
+                continue
+            face_no_face_by_user[user_id] = _safe_int(row.get("count"))
+
+        participant_watch_by_user: dict[str, int] = {}
+        participant_last_seen_by_user: dict[str, datetime | None] = {}
+        for row in live_participants_rows:
+            user_id = str(row.get("user_id") or "")
+            role = str(row.get("role") or "")
+            if not user_id or role != "student" or user_id == teacher_id:
+                continue
+
+            watch_time = _safe_int(row.get("watch_time_seconds"))
+            is_active = bool(row.get("is_active"))
+            if is_active:
+                joined_ref = row.get("last_joined_at") or row.get("joined_at")
+                watch_time += _safe_watch_seconds(joined_ref, now)
+
+            participant_watch_by_user[user_id] = max(participant_watch_by_user.get(user_id, 0), watch_time)
+            last_seen = row.get("left_at") or row.get("last_joined_at") or row.get("joined_at")
+            if isinstance(last_seen, datetime):
+                previous_last_seen = participant_last_seen_by_user.get(user_id)
+                if not previous_last_seen or last_seen > previous_last_seen:
+                    participant_last_seen_by_user[user_id] = last_seen
+
+        all_user_ids = sorted(
+            {
+                *emotion_by_user.keys(),
+                *modality_emotions_by_user.keys(),
+                *attention_by_user.keys(),
+                *face_no_face_by_user.keys(),
+                *participant_watch_by_user.keys(),
+                *emotion_span_by_user.keys(),
+            }
+        )
+        student_labels = await self._resolve_student_labels(all_user_ids)
+
+        students: list[dict] = []
+        for user_id in all_user_ids:
+            overall_counts = emotion_by_user.get(user_id, {})
+            modality_counts = modality_emotions_by_user.get(user_id, {})
+            attention_counts = attention_by_user.get(user_id, {})
+
+            dominant_overall = _dominant_label(overall_counts)
+            dominant_face = _dominant_label(modality_counts.get("face", {}))
+            dominant_text = _dominant_label(modality_counts.get("text", {}))
+            dominant_voice = _dominant_label(modality_counts.get("voice", {}))
+            dominant_attention = _dominant_label(attention_counts)
+
+            no_face_count = (
+                _safe_int(attention_counts.get("no_face_detected"))
+                + _safe_int(attention_counts.get("no_face"))
+                + _safe_int(face_no_face_by_user.get(user_id))
+            )
+            attention_total = int(sum(attention_counts.values()))
+            attention_percentages = _percentages(attention_counts, attention_total)
+
+            watch_time_seconds = _safe_int(participant_watch_by_user.get(user_id, 0))
+            span = emotion_span_by_user.get(user_id, {})
+            min_ts = span.get("min_ts")
+            max_ts = span.get("max_ts")
+            if watch_time_seconds <= 0 and isinstance(min_ts, datetime) and isinstance(max_ts, datetime):
+                watch_time_seconds = max(0, int((max_ts - min_ts).total_seconds()))
+
+            last_seen_candidates = []
+            last_seen_participant = participant_last_seen_by_user.get(user_id)
+            if isinstance(last_seen_participant, datetime):
+                last_seen_candidates.append(last_seen_participant)
+            if isinstance(max_ts, datetime):
+                last_seen_candidates.append(max_ts)
+            last_seen = max(last_seen_candidates) if last_seen_candidates else None
+
+            students.append(
+                {
+                    "user_id": user_id,
+                    "student_name": student_labels.get(user_id, user_id),
+                    "watch_time_seconds": watch_time_seconds,
+                    "watched_time_min": round(watch_time_seconds / 60.0, 2),
+                    "dominant_emotion": dominant_overall,
+                    "dominant_face_emotion": dominant_face,
+                    "dominant_text_emotion": dominant_text,
+                    "dominant_voice_emotion": dominant_voice,
+                    "attention_state": dominant_attention,
+                    "attention_state_breakdown": attention_counts,
+                    "attention_state_percentages": attention_percentages,
+                    "no_face_count": no_face_count,
+                    "last_seen": last_seen,
+                }
+            )
+
+        students.sort(key=lambda item: item.get("watch_time_seconds", 0), reverse=True)
+        return {"live_session_id": live_session_id, "students": students}
 
     async def _get_lesson_duration_seconds(self, lesson_id: str) -> int:
         lesson = await db.lessons.find_one({"lesson_id": lesson_id}, {"duration_sec": 1, "durationSec": 1})

@@ -7,9 +7,13 @@ from app.models import (
     LessonOverallAnalyticsResponse,
     LessonProgressAnalyticsResponse,
     LessonStudentsAnalyticsResponse,
+    LiveModalityAnalyticsResponse,
+    LiveOverallAnalyticsResponse,
+    LiveStudentsAnalyticsResponse,
 )
 from app.services.emotion_event_analytics import emotion_event_analytics_service
 from app.services.lesson_management import lesson_management_service
+from app.services.live_class_service import live_class_service
 
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -128,3 +132,101 @@ async def get_lesson_progress_analytics(
         class_id=class_id,
     )
     return LessonProgressAnalyticsResponse(**result)
+
+
+@router.get("/live/{live_session_id}/overall", response_model=LiveOverallAnalyticsResponse)
+async def get_live_overall_analytics(
+    live_session_id: str,
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+) -> LiveOverallAnalyticsResponse:
+    await live_class_service.get_live_class_for_user(
+        live_session_id=live_session_id,
+        current_user=current_user,
+    )
+    result = await emotion_event_analytics_service.get_live_overall_analytics(
+        live_session_id=live_session_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    return LiveOverallAnalyticsResponse(**result)
+
+
+@router.get("/live/{live_session_id}/face", response_model=LiveModalityAnalyticsResponse)
+async def get_live_face_analytics(
+    live_session_id: str,
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+) -> LiveModalityAnalyticsResponse:
+    await live_class_service.get_live_class_for_user(
+        live_session_id=live_session_id,
+        current_user=current_user,
+    )
+    result = await emotion_event_analytics_service.get_live_modality_analytics(
+        live_session_id=live_session_id,
+        modality="face",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    return LiveModalityAnalyticsResponse(**result)
+
+
+@router.get("/live/{live_session_id}/text", response_model=LiveModalityAnalyticsResponse)
+async def get_live_text_analytics(
+    live_session_id: str,
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+) -> LiveModalityAnalyticsResponse:
+    await live_class_service.get_live_class_for_user(
+        live_session_id=live_session_id,
+        current_user=current_user,
+    )
+    result = await emotion_event_analytics_service.get_live_modality_analytics(
+        live_session_id=live_session_id,
+        modality="text",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    return LiveModalityAnalyticsResponse(**result)
+
+
+@router.get("/live/{live_session_id}/voice", response_model=LiveModalityAnalyticsResponse)
+async def get_live_voice_analytics(
+    live_session_id: str,
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+) -> LiveModalityAnalyticsResponse:
+    await live_class_service.get_live_class_for_user(
+        live_session_id=live_session_id,
+        current_user=current_user,
+    )
+    result = await emotion_event_analytics_service.get_live_modality_analytics(
+        live_session_id=live_session_id,
+        modality="voice",
+        start_at=start_at,
+        end_at=end_at,
+    )
+    return LiveModalityAnalyticsResponse(**result)
+
+
+@router.get("/live/{live_session_id}/students", response_model=LiveStudentsAnalyticsResponse)
+async def get_live_students_analytics(
+    live_session_id: str,
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+    teacher_user: dict = Depends(require_teacher),
+) -> LiveStudentsAnalyticsResponse:
+    await live_class_service.get_live_class_for_user(
+        live_session_id=live_session_id,
+        current_user=teacher_user,
+    )
+    result = await emotion_event_analytics_service.get_students_live_analytics(
+        live_session_id=live_session_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    return LiveStudentsAnalyticsResponse(**result)

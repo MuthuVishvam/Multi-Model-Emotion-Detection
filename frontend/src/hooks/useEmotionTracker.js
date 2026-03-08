@@ -115,6 +115,7 @@ export default function useEmotionTracker({
   classId,
   lessonId,
   sessionId,
+  liveSessionId,
 }) {
   const webcamRef = useRef(null);
   const streamRef = useRef(null);
@@ -133,6 +134,7 @@ export default function useEmotionTracker({
     classId: classId || "",
     lessonId: lessonId || "",
     sessionId: sessionId || "",
+    liveSessionId: liveSessionId || "",
   });
   const noFaceIntervalsRef = useRef(0);
 
@@ -166,9 +168,10 @@ export default function useEmotionTracker({
       classId: classId || "",
       lessonId: lessonId || "",
       sessionId: sessionId || "",
+      liveSessionId: liveSessionId || "",
     };
     setFaceStats((current) => ({ ...current, userId: userId || "" }));
-  }, [userId, courseId, classId, lessonId, sessionId]);
+  }, [userId, courseId, classId, lessonId, sessionId, liveSessionId]);
 
   useEffect(() => {
     permissionDeniedRef.current = permissionDenied;
@@ -176,7 +179,7 @@ export default function useEmotionTracker({
 
   function queueFaceEvent({ emotionLabel, confidence, extra }) {
     const meta = metadataRef.current;
-    if (!meta.userId || !meta.lessonId || !meta.sessionId) {
+    if (!meta.userId || (!meta.sessionId && !meta.liveSessionId)) {
       return;
     }
 
@@ -184,8 +187,9 @@ export default function useEmotionTracker({
       user_id: meta.userId,
       class_id: meta.classId || null,
       course_id: meta.courseId || null,
-      lesson_id: meta.lessonId,
-      session_id: meta.sessionId,
+      lesson_id: meta.lessonId || (meta.liveSessionId ? `live:${meta.liveSessionId}` : null),
+      session_id: meta.sessionId || null,
+      live_session_id: meta.liveSessionId || null,
       modality: "face",
       emotion_label: emotionLabel,
       confidence: Number(confidence || 0),
@@ -236,6 +240,7 @@ export default function useEmotionTracker({
         count: batch.length,
         lessonId: metadataRef.current.lessonId,
         sessionId: metadataRef.current.sessionId,
+        liveSessionId: metadataRef.current.liveSessionId,
       });
     } catch (error) {
       queueRef.current = [...batch, ...queueRef.current];
@@ -362,8 +367,8 @@ export default function useEmotionTracker({
       setStatusText("Tracking armed. Camera permission will be requested on Play.");
       return;
     }
-    if (!meta.sessionId) {
-      setStatusText("Tracking armed. Start a session first in Discussion.");
+    if (!meta.sessionId && !meta.liveSessionId) {
+      setStatusText("Tracking armed. Join a live class or start a session first.");
       return;
     }
     if (permissionDeniedRef.current) {
@@ -403,7 +408,7 @@ export default function useEmotionTracker({
       }
 
       const currentMeta = metadataRef.current;
-      if (!currentMeta.sessionId) {
+      if (!currentMeta.sessionId && !currentMeta.liveSessionId) {
         return;
       }
 
@@ -547,7 +552,7 @@ export default function useEmotionTracker({
     if (lessonStartedRef.current) {
       void startDetectionLoop();
     }
-  }, [sessionId, userId, courseId, classId, lessonId, permissionDenied]);
+  }, [sessionId, liveSessionId, userId, courseId, classId, lessonId, permissionDenied]);
 
   useEffect(() => {
     if (flushTimerRef.current) {

@@ -92,6 +92,18 @@ def get_lesson_completions_collection() -> AsyncIOMotorCollection:
     return get_db()["lesson_completions"]
 
 
+def get_live_classes_collection() -> AsyncIOMotorCollection:
+    return get_db()["live_classes"]
+
+
+def get_live_participants_collection() -> AsyncIOMotorCollection:
+    return get_db()["live_participants"]
+
+
+def get_live_chat_collection() -> AsyncIOMotorCollection:
+    return get_db()["live_chat"]
+
+
 class Collections:
     @property
     def users(self) -> AsyncIOMotorCollection:
@@ -148,6 +160,18 @@ class Collections:
     @property
     def lesson_completions(self) -> AsyncIOMotorCollection:
         return get_lesson_completions_collection()
+
+    @property
+    def live_classes(self) -> AsyncIOMotorCollection:
+        return get_live_classes_collection()
+
+    @property
+    def live_participants(self) -> AsyncIOMotorCollection:
+        return get_live_participants_collection()
+
+    @property
+    def live_chat(self) -> AsyncIOMotorCollection:
+        return get_live_chat_collection()
 
 
 collections = Collections()

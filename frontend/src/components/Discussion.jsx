@@ -6,6 +6,7 @@ export default function Discussion({
   classId,
   lessonId,
   sessionId,
+  liveSessionId,
   setSessionId,
   sessionName,
   setSessionName,
@@ -55,6 +56,7 @@ export default function Discussion({
         classId={classId}
         lessonId={lessonId}
         sessionId={sessionId}
+        liveSessionId={liveSessionId}
         onStatusMessage={setStatusMessage}
         onPrediction={onVoicePrediction}
       />
