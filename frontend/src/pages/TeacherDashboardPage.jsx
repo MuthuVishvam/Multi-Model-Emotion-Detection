@@ -19,6 +19,7 @@ import {
   fetchClassLessons,
   fetchLessonModalityAnalytics,
   fetchLessonOverallAnalytics,
+  fetchLessonProgressAnalytics,
   fetchLessonStudentsAnalytics,
   fetchMyClasses,
 } from "../services/api";
@@ -195,6 +196,7 @@ export default function TeacherDashboardPage() {
   const [text, setText] = useState(null);
   const [voice, setVoice] = useState(null);
   const [students, setStudents] = useState([]);
+  const [progress, setProgress] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
 
   const [isLoadingClasses, setIsLoadingClasses] = useState(true);
@@ -251,6 +253,56 @@ export default function TeacherDashboardPage() {
       { label: "away", value: Number(percentages.away || 0) },
     ];
   }, [overall]);
+  const completionPieData = useMemo(() => {
+    const total = Number(progress?.total_students_with_progress || 0);
+    const completed = Number(progress?.completion_count || 0);
+    return [
+      { label: "Completed", value: completed },
+      { label: "Pending", value: Math.max(0, total - completed) },
+    ];
+  }, [progress]);
+  const studentTableRows = useMemo(() => {
+    const progressRows = Array.isArray(progress?.students) ? progress.students : [];
+    const progressByUserId = new Map(progressRows.map((row) => [String(row.user_id), row]));
+    const rows = [];
+    const seenUserIds = new Set();
+
+    for (const row of students) {
+      const userId = String(row.user_id || "");
+      const progressRow = progressByUserId.get(userId) || null;
+      seenUserIds.add(userId);
+      rows.push({
+        ...row,
+        watched_time_sec: Number(progressRow?.watched_time_sec ?? row.watch_time_seconds ?? 0),
+        completion_percent: Number(progressRow?.completion_percent ?? row.completion_percent ?? 0),
+        lesson_completed: Boolean(progressRow?.lesson_completed ?? row.lesson_completed),
+        no_face_detected: Number(progressRow?.no_face_detected ?? row.no_face_detected ?? 0),
+      });
+    }
+
+    for (const row of progressRows) {
+      const userId = String(row.user_id || "");
+      if (!userId || seenUserIds.has(userId)) {
+        continue;
+      }
+      rows.push({
+        user_id: userId,
+        student_name: row.student_name || userId,
+        watched_time_sec: Number(row.watched_time_sec || 0),
+        watched_time_min: Number((Number(row.watched_time_sec || 0) / 60).toFixed(2)),
+        completion_percent: Number(row.completion_percent || 0),
+        lesson_completed: Boolean(row.lesson_completed),
+        dominant_face_emotion: "unknown",
+        dominant_text_emotion: "unknown",
+        dominant_voice_emotion: "unknown",
+        no_face_detected: Number(row.no_face_detected || 0),
+        attention_state_summary: "-",
+        last_seen: row.updated_at || null,
+      });
+    }
+
+    return rows.sort((a, b) => Number(b.completion_percent || 0) - Number(a.completion_percent || 0));
+  }, [students, progress]);
 
   async function loadClasses() {
     setIsLoadingClasses(true);
@@ -303,17 +355,19 @@ export default function TeacherDashboardPage() {
       setText(null);
       setVoice(null);
       setStudents([]);
+      setProgress(null);
       return;
     }
 
     setIsLoadingAnalytics(true);
     try {
-      const [overallData, faceData, textData, voiceData, studentData] = await Promise.all([
+      const [overallData, faceData, textData, voiceData, studentData, progressData] = await Promise.all([
         fetchLessonOverallAnalytics(selectedLessonId, filters),
         fetchLessonModalityAnalytics(selectedLessonId, "face", filters),
         fetchLessonModalityAnalytics(selectedLessonId, "text", filters),
         fetchLessonModalityAnalytics(selectedLessonId, "voice", filters),
         fetchLessonStudentsAnalytics(selectedLessonId, filters),
+        fetchLessonProgressAnalytics(selectedLessonId, filters),
       ]);
 
       setOverall(overallData);
@@ -321,6 +375,7 @@ export default function TeacherDashboardPage() {
       setText(textData);
       setVoice(voiceData);
       setStudents(Array.isArray(studentData?.students) ? studentData.students : []);
+      setProgress(progressData || null);
       setMessage("");
     } catch (error) {
       setOverall(null);
@@ -328,6 +383,7 @@ export default function TeacherDashboardPage() {
       setText(null);
       setVoice(null);
       setStudents([]);
+      setProgress(null);
       setMessage(error.message || "Failed to load analytics.");
     } finally {
       setIsLoadingAnalytics(false);
@@ -478,6 +534,25 @@ export default function TeacherDashboardPage() {
                 ))}
               </div>
             </div>
+
+            <div className="chart-card">
+              <h3>Lesson Completion</h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={completionPieData} dataKey="value" nameKey="label" outerRadius={60} label />
+                  {completionPieData.map((_, index) => (
+                    <Cell key={`completion-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <p className="small-note">
+                Completed: {Number(progress?.completion_count || 0)} / {Number(progress?.total_students_with_progress || 0)}
+              </p>
+              <p className="small-note">
+                Completion rate: {formatPercent(progress?.completion_rate_percent || 0)}
+              </p>
+            </div>
           </section>
 
           <section className="analytics-modality-grid">
@@ -576,29 +651,29 @@ export default function TeacherDashboardPage() {
               <thead>
                 <tr>
                   <th>Student</th>
-                  <th>Watched (min)</th>
+                  <th>Watched Time</th>
                   <th>Completion %</th>
-                  <th>Overall</th>
+                  <th>Lesson Completed</th>
                   <th>Face</th>
                   <th>Text</th>
                   <th>Voice</th>
+                  <th>No Face Detected</th>
                   <th>Attention Summary</th>
-                  <th>Last Seen</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {students.map((row) => (
+                {studentTableRows.map((row) => (
                   <tr key={row.user_id}>
                     <td>{row.student_name}</td>
-                    <td>{Number(row.watched_time_min || 0).toFixed(1)}</td>
+                    <td>{Number((Number(row.watched_time_sec || 0) / 60).toFixed(1))} min</td>
                     <td>{formatPercent(row.completion_percent)}</td>
-                    <td>{row.dominant_emotion_overall || row.dominant_emotion}</td>
+                    <td>{row.lesson_completed ? "Yes" : "No"}</td>
                     <td>{row.dominant_face_emotion}</td>
                     <td>{row.dominant_text_emotion}</td>
                     <td>{row.dominant_voice_emotion}</td>
+                    <td>{Number(row.no_face_detected || 0)}</td>
                     <td>{row.attention_state_summary || "-"}</td>
-                    <td>{formatDateTime(row.last_seen)}</td>
                     <td>
                       <button className="secondary" onClick={() => setSelectedStudent(row)}>
                         View Student Details
@@ -606,7 +681,7 @@ export default function TeacherDashboardPage() {
                     </td>
                   </tr>
                 ))}
-                {students.length === 0 && (
+                {studentTableRows.length === 0 && (
                   <tr>
                     <td colSpan={10}>No student analytics data for this lesson.</td>
                   </tr>

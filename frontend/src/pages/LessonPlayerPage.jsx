@@ -409,6 +409,7 @@ export default function LessonPlayerPage({ user }) {
     {
       fallbackDurationSec: selectedLessonDurationSec,
       completionThresholdPercent: LESSON_COMPLETION_RULES.watchThresholdPercent,
+      externalPlaying: lessonStarted && selectedMedia.type !== "video",
     }
   );
   const attentionStats = useMemo(
@@ -435,6 +436,7 @@ export default function LessonPlayerPage({ user }) {
         ? hasModalityCapture
         : true
     );
+  const progressSyncAllowed = Boolean(classId || selectedLesson?.source === "api" || selectedLesson?.course_id);
 
   async function loadLessonDiscussion(lessonIdValue, classIdValue = "") {
     if (!lessonIdValue) {
@@ -567,7 +569,24 @@ export default function LessonPlayerPage({ user }) {
   useEffect(() => {
     setLessonStarted(false);
     emotionTracker.resetLessonStart();
+    setTextFeedbackSent(false);
+    setAudioFeedbackSent(false);
+    setCompletionSaved(false);
+    setCompletionMessage("");
+    setProgressUpdateError("");
+    completionMarkedRef.current = false;
+    lastProgressSyncRef.current = 0;
   }, [selectedLesson?.lesson_id]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setCompletionSaved(false);
+      setCompletionMessage("");
+      setProgressUpdateError("");
+      completionMarkedRef.current = false;
+      lastProgressSyncRef.current = 0;
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     if (!course || !selectedLesson) {
@@ -608,6 +627,50 @@ export default function LessonPlayerPage({ user }) {
     emotionTracker.handleLessonPlay();
   }
 
+  async function syncLessonProgress({ force = false, completedOverride = null } = {}) {
+    const selectedLessonId = selectedLesson ? String(selectedLesson.lesson_id || "") : "";
+    if (!sessionId || !selectedLessonId || !progressSyncAllowed) {
+      return;
+    }
+    if (isProgressSyncing) {
+      return;
+    }
+
+    const now = Date.now();
+    if (!force && now - lastProgressSyncRef.current < 15000) {
+      return;
+    }
+
+    const payload = {
+      session_id: sessionId,
+      watched_time_sec: Math.max(0, Math.floor(watchTracker.watchedSeconds || 0)),
+      completion_percent: Number((watchTracker.completionPercent || 0).toFixed(2)),
+      completed: completedOverride === null ? lessonCompleted : Boolean(completedOverride),
+      class_id: classId || null,
+      face_emotion_captured: faceEmotionCaptured,
+      text_feedback_sent: textFeedbackSent,
+      audio_feedback_sent: audioFeedbackSent,
+      watch_progress_completed: watchProgressCompleted,
+    };
+
+    try {
+      setIsProgressSyncing(true);
+      await updateLessonProgress(selectedLessonId, payload);
+      lastProgressSyncRef.current = Date.now();
+      setProgressUpdateError("");
+      console.debug("[MELD][Progress] synced", {
+        lessonId: selectedLessonId,
+        sessionId,
+        completionPercent: payload.completion_percent,
+        completed: payload.completed,
+      });
+    } catch (error) {
+      setProgressUpdateError(error?.message || "Failed to sync lesson progress.");
+    } finally {
+      setIsProgressSyncing(false);
+    }
+  }
+
   async function startSession() {
     const token = localStorage.getItem("token") || "";
     try {
@@ -623,6 +686,12 @@ export default function LessonPlayerPage({ user }) {
         token
       );
       setSessionId(data.id);
+      setTextFeedbackSent(false);
+      setAudioFeedbackSent(false);
+      setCompletionSaved(false);
+      setCompletionMessage("");
+      completionMarkedRef.current = false;
+      lastProgressSyncRef.current = 0;
       setStatusMessage(`Session started: ${data.id}`);
     } catch (error) {
       setStatusMessage(error.message);
@@ -650,7 +719,7 @@ export default function LessonPlayerPage({ user }) {
         "/emotions/text",
         "POST",
         {
-          userId: user.email,
+          userId: user?.id || user?.email || "",
           courseId: classId ? (selectedLesson?.course_id || classId) : (course?.id || ""),
           classId: classId || null,
           lessonId: selectedLesson ? String(selectedLesson.lesson_id) : "",
@@ -675,8 +744,20 @@ export default function LessonPlayerPage({ user }) {
 
       setText("");
       setStatusMessage(`Tagged as ${data.emotion} (${Number(data.confidence || 0).toFixed(2)}).`);
+      setTextFeedbackSent(true);
+      void syncLessonProgress({ force: true });
+      console.debug("[MELD][Text] submitted", {
+        lessonId: selectedLesson ? String(selectedLesson.lesson_id) : "",
+        sessionId,
+        emotion: data?.emotion,
+      });
     } catch (error) {
-      setStatusMessage(error.message);
+      const value = String(error?.message || "");
+      if (value.toLowerCase().includes("network") || value.toLowerCase().includes("failed")) {
+        setStatusMessage("Unable to submit text emotion right now. Check connection and try again.");
+      } else {
+        setStatusMessage(value || "Unable to submit text emotion.");
+      }
     } finally {
       setIsSubmittingMessage(false);
     }
@@ -699,7 +780,37 @@ export default function LessonPlayerPage({ user }) {
     };
 
     setDiscussionMessages((current) => [entry, ...current]);
+    setAudioFeedbackSent(true);
+    void syncLessonProgress({ force: true });
   }
+
+  useEffect(() => {
+    if (!sessionId || !selectedLesson?.lesson_id) {
+      return;
+    }
+    void syncLessonProgress();
+  }, [
+    sessionId,
+    selectedLesson?.lesson_id,
+    watchTracker.watchedSeconds,
+    watchTracker.completionPercent,
+    faceEmotionCaptured,
+    textFeedbackSent,
+    audioFeedbackSent,
+    watchProgressCompleted,
+    lessonCompleted,
+    progressSyncAllowed,
+  ]);
+
+  useEffect(() => {
+    if (!lessonCompleted || completionMarkedRef.current) {
+      return;
+    }
+    completionMarkedRef.current = true;
+    setCompletionSaved(true);
+    setCompletionMessage("Lesson Completed Successfully");
+    void syncLessonProgress({ force: true, completedOverride: true });
+  }, [lessonCompleted, sessionId, selectedLesson?.lesson_id]);
 
   if (!course) {
     return (
@@ -857,16 +968,39 @@ export default function LessonPlayerPage({ user }) {
 
               <section className="timeline-card">
                 <div className="section-header-row">
-                  <h4>Timeline</h4>
-                  <span>{playbackProgress}% reviewed</span>
+                  <h4>Lesson Progress</h4>
+                  <span>{Number(watchTracker.completionPercent || 0).toFixed(1)}% watched</span>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={playbackProgress}
-                  onChange={(event) => setPlaybackProgress(Number(event.target.value))}
-                />
+                <div className="lesson-progress-meta">
+                  <span>
+                    {formatClock(watchTracker.currentTimeSec)} / {formatClock(watchTracker.durationSec || selectedLessonDurationSec)}
+                  </span>
+                  <span>
+                    {watchTracker.isPlaying ? "Video playing" : "Video paused"} | {watchTracker.isTabVisible ? "Tab visible" : "Tab hidden"}
+                  </span>
+                </div>
+                <div className="lesson-progress-line" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(watchTracker.completionPercent || 0)}>
+                  <div
+                    className="lesson-progress-line__fill"
+                    style={{ width: `${Math.min(100, Number(watchTracker.completionPercent || 0))}%` }}
+                  />
+                </div>
+                <div className="lesson-checklist">
+                  <p>{faceEmotionCaptured ? "Face emotion captured ✅" : "Face emotion captured ❌"}</p>
+                  <p>{textFeedbackSent ? "Text feedback sent ✅" : "Text feedback sent ❌"}</p>
+                  <p>{audioFeedbackSent ? "Audio feedback sent ✅" : "Audio feedback sent ❌"}</p>
+                  <p>{watchProgressCompleted ? "Watch progress completed ✅" : "Watch progress completed ❌"}</p>
+                </div>
+                {watchProgressCompleted && !hasModalityCapture && (
+                  <p className="small-note">
+                    Watch target reached. Submit text or audio feedback, or capture face events to complete the lesson.
+                  </p>
+                )}
+                {(lessonCompleted || completionSaved) && (
+                  <div className="lesson-completed-banner">Lesson Completed</div>
+                )}
+                {completionMessage && <div className="inline-message inline-message-soft">{completionMessage}</div>}
+                {progressUpdateError && <p className="small-note">{progressUpdateError}</p>}
                 <div className="timeline-list">
                   {timelineRows.map((row) => (
                     <div key={`${row.time}-${row.label}`} className="timeline-row">
@@ -907,7 +1041,7 @@ export default function LessonPlayerPage({ user }) {
 
           {activeTab === "discussion" && (
             <DiscussionPanel
-              userId={user.email}
+              userId={user?.id || user?.email || ""}
               courseId={course?.id || ""}
               classId={classId || ""}
               lessonId={selectedLesson ? String(selectedLesson.lesson_id) : ""}

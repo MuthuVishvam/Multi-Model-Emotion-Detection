@@ -92,7 +92,25 @@ Deploy and open:
    - register teacher -> pending
    - approve in admin -> teacher can access teacher dashboard
 
-## 6. Redeploy Flow
+## 6. Lesson Processing Verification (Deployed)
+
+1. Open a student lesson and click `Play`.
+2. Start a session in Discussion.
+3. Enable emotion tracking and verify:
+   - Camera badge shows `On`
+   - Face detection badge updates
+   - No black preview after permission is granted
+4. Submit text feedback and confirm emotion tag appears.
+5. Record voice feedback (10-30 sec) and confirm `Processed` state.
+6. Watch lesson to >=90% and verify:
+   - checklist updates
+   - `Lesson Completed` appears
+7. Open teacher dashboard and verify:
+   - overall/face/text/voice charts
+   - lesson completion chart
+   - student progress table values
+
+## 7. Redeploy Flow
 
 For each new change:
 

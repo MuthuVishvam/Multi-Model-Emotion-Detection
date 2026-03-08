@@ -90,6 +90,29 @@ VITE_API_URL=http://localhost:8000
 - `POST /admin/teachers/{teacher_id}/disable`
 - `POST /admin/teachers/{teacher_id}/enable`
 
+## Lesson Emotion + Progress APIs
+
+- `POST /emotions/batch` (face events in batches)
+- `POST /emotions/text` (text emotion + comment storage)
+- `POST /emotions/voice` (audio upload + emotion prediction)
+- `POST /lessons/{lesson_id}/progress` (watch + modality completion status)
+- `GET /analytics/lesson/{lesson_id}/overall`
+- `GET /analytics/lesson/{lesson_id}/face`
+- `GET /analytics/lesson/{lesson_id}/text`
+- `GET /analytics/lesson/{lesson_id}/voice`
+- `GET /analytics/lesson/{lesson_id}/progress`
+
+## Admin Seed (Local)
+
+From `backend/`:
+
+```bash
+$env:ADMIN_EMAIL="admin@example.com"
+$env:ADMIN_PASSWORD="StrongPassword123!"
+$env:ADMIN_FULL_NAME="Platform Admin"
+python -m db.seed_admin
+```
+
 ## Production Targets
 
 - Backend: Render

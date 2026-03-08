@@ -13,6 +13,7 @@ function toSafeSeconds(value) {
 export default function useWatchTimeTracker(videoRef, sessionId, lessonId, options = {}) {
   const fallbackDurationSec = toSafeSeconds(options.fallbackDurationSec);
   const completionThresholdPercent = Number(options.completionThresholdPercent || 90);
+  const externalPlaying = Boolean(options.externalPlaying);
 
   const [watchedSeconds, setWatchedSeconds] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -26,6 +27,7 @@ export default function useWatchTimeTracker(videoRef, sessionId, lessonId, optio
   const boundVideoRef = useRef(null);
   const currentTimeRef = useRef(0);
   const durationRef = useRef(fallbackDurationSec);
+  const externalPlayingRef = useRef(externalPlaying);
 
   useEffect(() => {
     watchedSecondsRef.current = 0;
@@ -43,6 +45,14 @@ export default function useWatchTimeTracker(videoRef, sessionId, lessonId, optio
       setDurationSec(fallbackDurationSec);
     }
   }, [fallbackDurationSec]);
+
+  useEffect(() => {
+    externalPlayingRef.current = externalPlaying;
+    if (!videoRef?.current) {
+      isPlayingRef.current = externalPlaying;
+      setIsPlaying(externalPlaying);
+    }
+  }, [externalPlaying, videoRef]);
 
   useEffect(() => {
     function onVisibilityChange() {
@@ -118,20 +128,23 @@ export default function useWatchTimeTracker(videoRef, sessionId, lessonId, optio
     }
 
     let unbind = () => {};
-    const syncTimer = window.setInterval(() => {
-      const currentVideo = videoRef?.current || null;
-      if (currentVideo === boundVideoRef.current) {
-        return;
-      }
+      const syncTimer = window.setInterval(() => {
+        const currentVideo = videoRef?.current || null;
+        if (currentVideo === boundVideoRef.current) {
+          if (!currentVideo) {
+            syncPlayingState(externalPlayingRef.current);
+          }
+          return;
+        }
 
-      unbind();
-      boundVideoRef.current = currentVideo;
-      if (!currentVideo) {
-        syncPlayingState(false);
-        return;
-      }
-      unbind = bindVideo(currentVideo);
-    }, 300);
+        unbind();
+        boundVideoRef.current = currentVideo;
+        if (!currentVideo) {
+          syncPlayingState(externalPlayingRef.current);
+          return;
+        }
+        unbind = bindVideo(currentVideo);
+      }, 300);
 
     return () => {
       window.clearInterval(syncTimer);
@@ -146,7 +159,7 @@ export default function useWatchTimeTracker(videoRef, sessionId, lessonId, optio
       if (!sessionId || !lessonId) {
         return;
       }
-      if (!isPlayingRef.current || !isTabVisibleRef.current) {
+      if (!(isPlayingRef.current || externalPlayingRef.current) || !isTabVisibleRef.current) {
         return;
       }
 
@@ -172,7 +185,7 @@ export default function useWatchTimeTracker(videoRef, sessionId, lessonId, optio
     durationSec: Number(effectiveDurationSec.toFixed(2)),
     completionPercent,
     watchProgressCompleted,
-    isPlaying,
+    isPlaying: isPlaying || externalPlaying,
     isTabVisible,
   };
 }
