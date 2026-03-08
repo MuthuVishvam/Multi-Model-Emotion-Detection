@@ -113,6 +113,12 @@ async def batch_emotion_events(
             events=[event.model_dump() for event in payload.events],
             current_user=current_user,
         )
+        logger.info(
+            "Emotion batch ingested (unified) actor=%s inserted=%s skipped=%s",
+            current_user.get("email"),
+            result.get("inserted_count", 0),
+            result.get("skipped_count", 0),
+        )
         return EventBatchIngestResponse(**result)
 
     events = payload.events or []
@@ -189,6 +195,12 @@ async def batch_emotion_events(
     unified_result = await emotion_event_analytics_service.ingest_emotion_events(
         events=unified_events,
         current_user=current_user,
+    )
+    logger.info(
+        "Emotion batch ingested (face-legacy) actor=%s inserted=%s skipped=%s",
+        current_user.get("email"),
+        unified_result.get("inserted_count", 0),
+        skipped_count + unified_result.get("skipped_count", 0),
     )
     return EventBatchIngestResponse(
         inserted_count=unified_result.get("inserted_count", 0),
@@ -272,6 +284,14 @@ async def detect_text_emotion_for_message(
             }
         ],
         current_user=current_user,
+    )
+    logger.info(
+        "Text emotion processed user_id=%s lesson_id=%s session_id=%s emotion=%s confidence=%.3f",
+        payload.userId,
+        lesson_id,
+        payload.sessionId,
+        prediction.emotion,
+        float(prediction.confidence),
     )
 
     return TextEmotionMessageResponse(

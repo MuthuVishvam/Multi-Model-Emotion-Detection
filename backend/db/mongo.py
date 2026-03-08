@@ -76,6 +76,22 @@ def get_lesson_assignments_collection() -> AsyncIOMotorCollection:
     return get_db()["lesson_assignments"]
 
 
+def get_comments_collection() -> AsyncIOMotorCollection:
+    return get_db()["comments"]
+
+
+def get_voice_feedback_collection() -> AsyncIOMotorCollection:
+    return get_db()["voice_feedback"]
+
+
+def get_lesson_progress_collection() -> AsyncIOMotorCollection:
+    return get_db()["lesson_progress"]
+
+
+def get_lesson_completions_collection() -> AsyncIOMotorCollection:
+    return get_db()["lesson_completions"]
+
+
 class Collections:
     @property
     def users(self) -> AsyncIOMotorCollection:
@@ -116,6 +132,22 @@ class Collections:
     @property
     def lesson_assignments(self) -> AsyncIOMotorCollection:
         return get_lesson_assignments_collection()
+
+    @property
+    def comments(self) -> AsyncIOMotorCollection:
+        return get_comments_collection()
+
+    @property
+    def voice_feedback(self) -> AsyncIOMotorCollection:
+        return get_voice_feedback_collection()
+
+    @property
+    def lesson_progress(self) -> AsyncIOMotorCollection:
+        return get_lesson_progress_collection()
+
+    @property
+    def lesson_completions(self) -> AsyncIOMotorCollection:
+        return get_lesson_completions_collection()
 
 
 collections = Collections()

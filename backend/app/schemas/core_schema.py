@@ -302,6 +302,8 @@ class StudentLessonAnalyticsRow(BaseModel):
     attention_score: float = 0.0
     dominant_attention_state: str = "unknown"
     attention_state_summary: str = ""
+    no_face_detected: int = 0
+    lesson_completed: bool = False
     emotion_event_count: int = 0
     attention_state_breakdown: dict[str, int] = Field(default_factory=dict)
     attention_state_percentages: dict[str, float] = Field(default_factory=dict)
@@ -315,6 +317,55 @@ class StudentLessonAnalyticsRow(BaseModel):
 class LessonStudentsAnalyticsResponse(BaseModel):
     lesson_id: str
     students: list[StudentLessonAnalyticsRow] = Field(default_factory=list)
+
+
+class LessonProgressUpdateRequest(BaseModel):
+    session_id: NonEmptyId
+    watched_time_sec: int = Field(ge=0)
+    completion_percent: float = Field(ge=0.0, le=100.0)
+    completed: bool = False
+    class_id: Optional[NonEmptyId] = None
+    face_emotion_captured: bool = False
+    text_feedback_sent: bool = False
+    audio_feedback_sent: bool = False
+    watch_progress_completed: bool = False
+
+
+class LessonProgressUpdateResponse(BaseModel):
+    lesson_id: str
+    session_id: str
+    user_id: str
+    class_id: Optional[str] = None
+    watched_time_sec: int = 0
+    completion_percent: float = 0.0
+    completed: bool = False
+    face_emotion_captured: bool = False
+    text_feedback_sent: bool = False
+    audio_feedback_sent: bool = False
+    watch_progress_completed: bool = False
+    updated_at: datetime
+
+
+class LessonProgressAnalyticsItem(BaseModel):
+    user_id: str
+    student_name: str
+    watched_time_sec: int = 0
+    completion_percent: float = 0.0
+    lesson_completed: bool = False
+    face_emotion_captured: bool = False
+    text_feedback_sent: bool = False
+    audio_feedback_sent: bool = False
+    watch_progress_completed: bool = False
+    no_face_detected: int = 0
+    updated_at: Optional[datetime] = None
+
+
+class LessonProgressAnalyticsResponse(BaseModel):
+    lesson_id: str
+    completion_count: int = 0
+    total_students_with_progress: int = 0
+    completion_rate_percent: float = 0.0
+    students: list[LessonProgressAnalyticsItem] = Field(default_factory=list)
 
 
 class LessonAssignRequest(BaseModel):

@@ -1,12 +1,58 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { apiRequest, fetchClassLessons, fetchLessonComments, fetchLessonVoiceFeedback } from "../services/api";
+import {
+  apiRequest,
+  fetchClassLessons,
+  fetchLessonComments,
+  fetchLessonVoiceFeedback,
+  updateLessonProgress,
+} from "../services/api";
 import Discussion from "../components/Discussion";
 import { getAllCourseLessons, getCourseById, getLessonById } from "../courseCatalog";
 import useAttentionTracker from "../hooks/useAttentionTracker";
 import useEmotionTracker from "../hooks/useEmotionTracker";
 import useWatchTimeTracker from "../hooks/useWatchTimeTracker";
+
+const LESSON_COMPLETION_RULES = {
+  watchThresholdPercent: 90,
+  requireAtLeastOneModality: true,
+};
+
+function formatClock(totalSeconds) {
+  const safe = Math.max(0, Number(totalSeconds || 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = Math.floor(safe % 60);
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function parseLessonDurationSeconds(lesson) {
+  if (!lesson) {
+    return 0;
+  }
+
+  const numericCandidates = [
+    Number(lesson.duration_sec || 0),
+    Number(lesson.durationSec || 0),
+  ];
+  for (const value of numericCandidates) {
+    if (Number.isFinite(value) && value > 0) {
+      return Math.floor(value);
+    }
+  }
+
+  const durationText = String(lesson.duration || "");
+  const match = durationText.match(/(\d+)\s*min/i);
+  if (match) {
+    return Number(match[1] || 0) * 60;
+  }
+  return 0;
+}
 
 function extractYouTubeVideoId(urlString) {
   if (!urlString) {
@@ -85,6 +131,7 @@ function mapAssignedLesson(lesson, index) {
       ? lesson.resources
       : ["Lesson notes", "Discussion prompts", "Practice checklist"],
     course_id: lesson.course_id || lesson.courseId || "",
+    duration_sec: durationSec,
   };
 }
 
@@ -170,6 +217,14 @@ function ResourcesPanel({
       <h4>Resources & Commands</h4>
 
       <TrackingIndicator tracker={tracker} />
+      <div className="status-badge-row">
+        <span className={tracker.cameraState === "on" ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
+          Camera: {tracker.cameraState === "on" ? "On" : "Off"}
+        </span>
+        <span className={tracker.faceDetectionState === "running" ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
+          Face Detection: {tracker.faceDetectionState === "running" ? "Running" : "Not Detected"}
+        </span>
+      </div>
       <div className={attentionTracker.trackingOn ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
         <span className="tracking-indicator__dot" aria-hidden="true" />
         <span>
@@ -207,6 +262,9 @@ function ResourcesPanel({
           {tracker.lastEmotion ? ` | Last: ${tracker.lastEmotion} (${Math.round(tracker.lastConfidence * 100)}%)` : ""}
         </p>
         {tracker.flushError && <p className="small-note">Batch upload retrying: {tracker.flushError}</p>}
+        {tracker.faceEventsSent > 0 && (
+          <p className="small-note">Face events sent: {tracker.faceEventsSent}</p>
+        )}
         <p className="small-note">
           Watch time: {watchTracker.watchedSeconds}s | Tab: {watchTracker.isTabVisible ? "visible" : "hidden"} |
           Video: {watchTracker.isPlaying ? "playing" : "paused"}
@@ -277,8 +335,15 @@ export default function LessonPlayerPage({ user }) {
   const [discussionMessages, setDiscussionMessages] = useState([]);
   const [isLoadingDiscussion, setIsLoadingDiscussion] = useState(false);
   const [notesValue, setNotesValue] = useState("");
-  const [playbackProgress, setPlaybackProgress] = useState(18);
+  const [textFeedbackSent, setTextFeedbackSent] = useState(false);
+  const [audioFeedbackSent, setAudioFeedbackSent] = useState(false);
+  const [completionSaved, setCompletionSaved] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState("");
+  const [progressUpdateError, setProgressUpdateError] = useState("");
+  const [isProgressSyncing, setIsProgressSyncing] = useState(false);
   const lessonVideoRef = useRef(null);
+  const lastProgressSyncRef = useRef(0);
+  const completionMarkedRef = useRef(false);
   const classScopedCourse = useMemo(() => {
     if (!classId) {
       return null;
@@ -311,6 +376,10 @@ export default function LessonPlayerPage({ user }) {
   );
   const selectedMedia = useMemo(() => inferLessonMedia(selectedLesson?.content || ""), [selectedLesson]);
   const timelineRows = useMemo(() => buildTimelineRows(selectedLesson), [selectedLesson]);
+  const selectedLessonDurationSec = useMemo(
+    () => parseLessonDurationSeconds(selectedLesson),
+    [selectedLesson]
+  );
 
   const sessionEmotionCounts = useMemo(() => {
     const counts = {};
@@ -327,31 +396,45 @@ export default function LessonPlayerPage({ user }) {
   );
 
   const emotionTracker = useEmotionTracker({
-    userId: user?.email || "",
+    userId: user?.id || user?.email || "",
     courseId: classId ? (selectedLesson?.course_id || classId || "") : (course?.id || ""),
+    classId: classId || "",
     lessonId: selectedLesson ? String(selectedLesson.lesson_id || "") : "",
     sessionId,
   });
   const watchTracker = useWatchTimeTracker(
     lessonVideoRef,
     sessionId,
-    selectedLesson ? String(selectedLesson.lesson_id || "") : ""
+    selectedLesson ? String(selectedLesson.lesson_id || "") : "",
+    {
+      fallbackDurationSec: selectedLessonDurationSec,
+      completionThresholdPercent: LESSON_COMPLETION_RULES.watchThresholdPercent,
+    }
   );
   const attentionStats = useMemo(
     () => ({
       ...(emotionTracker.faceStats || {}),
-      userId: user?.email || "",
+      userId: user?.id || user?.email || "",
       isPlaying: watchTracker.isPlaying,
       tabVisible: watchTracker.isTabVisible,
       watchedSeconds: watchTracker.watchedSeconds,
     }),
-    [emotionTracker.faceStats, user?.email, watchTracker.isPlaying, watchTracker.isTabVisible, watchTracker.watchedSeconds]
+    [emotionTracker.faceStats, user?.id, user?.email, watchTracker.isPlaying, watchTracker.isTabVisible, watchTracker.watchedSeconds]
   );
   const attentionTracker = useAttentionTracker(
     sessionId,
     selectedLesson ? String(selectedLesson.lesson_id || "") : "",
     attentionStats
   );
+  const watchProgressCompleted = watchTracker.completionPercent >= LESSON_COMPLETION_RULES.watchThresholdPercent;
+  const faceEmotionCaptured = emotionTracker.hasFaceCapture || emotionTracker.faceEventsSent > 0;
+  const hasModalityCapture = faceEmotionCaptured || textFeedbackSent || audioFeedbackSent;
+  const lessonCompleted = watchProgressCompleted
+    && (
+      LESSON_COMPLETION_RULES.requireAtLeastOneModality
+        ? hasModalityCapture
+        : true
+    );
 
   async function loadLessonDiscussion(lessonIdValue, classIdValue = "") {
     if (!lessonIdValue) {

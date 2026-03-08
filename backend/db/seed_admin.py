@@ -1,7 +1,14 @@
 from datetime import datetime, timezone
 import os
+import sys
+from pathlib import Path
 
 from pymongo import MongoClient
+
+# Ensure `app` package imports work when script is executed as `python db/seed_admin.py`.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.config import settings
 from app.security import get_password_hash

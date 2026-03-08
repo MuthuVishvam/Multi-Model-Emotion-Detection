@@ -5,19 +5,20 @@ import { apiRequest } from "../services/api";
 
 const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 const DETECTION_INTERVAL_MS = 2000;
-const FLUSH_INTERVAL_MS = 30000;
+const FLUSH_INTERVAL_MS = 25000;
+const CAMERA_RETRY_DELAY_MS = 900;
+const CAMERA_MAX_RETRIES = 2;
+const NO_FACE_EVENT_STREAK = 3;
 const MIN_CONFIDENCE = 0.35;
 
 function getTopExpression(expressions) {
   if (!expressions) {
     return null;
   }
-
   const entries = Object.entries(expressions);
   if (entries.length === 0) {
     return null;
   }
-
   const [emotion, confidence] = entries.sort((a, b) => b[1] - a[1])[0];
   return {
     emotion,
@@ -51,9 +52,67 @@ function isPermissionDeniedError(error) {
   );
 }
 
+function waitForVideoMetadata(videoElement, timeoutMs = 5000) {
+  if (!videoElement) {
+    return Promise.reject(new Error("Camera preview unavailable"));
+  }
+  if (videoElement.readyState >= 1 && videoElement.videoWidth > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    function cleanup() {
+      videoElement.removeEventListener("loadedmetadata", onReady);
+      videoElement.removeEventListener("loadeddata", onReady);
+      videoElement.removeEventListener("error", onError);
+      window.clearTimeout(timeoutId);
+    }
+
+    function onReady() {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve();
+    }
+
+    function onError() {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(new Error("Unable to load camera metadata"));
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(new Error("Camera metadata timed out"));
+    }, timeoutMs);
+
+    videoElement.addEventListener("loadedmetadata", onReady, { once: true });
+    videoElement.addEventListener("loadeddata", onReady, { once: true });
+    videoElement.addEventListener("error", onError, { once: true });
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 export default function useEmotionTracker({
   userId,
   courseId,
+  classId,
   lessonId,
   sessionId,
 }) {
@@ -71,9 +130,11 @@ export default function useEmotionTracker({
   const metadataRef = useRef({
     userId: userId || "",
     courseId: courseId || "",
+    classId: classId || "",
     lessonId: lessonId || "",
     sessionId: sessionId || "",
   });
+  const noFaceIntervalsRef = useRef(0);
 
   const [trackingEnabled, setTrackingEnabledState] = useState(false);
   const [trackingActive, setTrackingActive] = useState(false);
@@ -84,6 +145,10 @@ export default function useEmotionTracker({
   const [lastEmotion, setLastEmotion] = useState("");
   const [lastConfidence, setLastConfidence] = useState(0);
   const [flushError, setFlushError] = useState("");
+  const [cameraState, setCameraState] = useState("off");
+  const [faceDetectionState, setFaceDetectionState] = useState("not_detected");
+  const [faceEventsSent, setFaceEventsSent] = useState(0);
+  const [hasFaceCapture, setHasFaceCapture] = useState(false);
   const [faceStats, setFaceStats] = useState({
     userId: userId || "",
     trackerActive: false,
@@ -93,21 +158,44 @@ export default function useEmotionTracker({
     noFaceIntervals: 0,
     updatedAt: null,
   });
-  const noFaceIntervalsRef = useRef(0);
 
   useEffect(() => {
     metadataRef.current = {
       userId: userId || "",
       courseId: courseId || "",
+      classId: classId || "",
       lessonId: lessonId || "",
       sessionId: sessionId || "",
     };
     setFaceStats((current) => ({ ...current, userId: userId || "" }));
-  }, [userId, courseId, lessonId, sessionId]);
+  }, [userId, courseId, classId, lessonId, sessionId]);
 
   useEffect(() => {
     permissionDeniedRef.current = permissionDenied;
   }, [permissionDenied]);
+
+  function queueFaceEvent({ emotionLabel, confidence, extra }) {
+    const meta = metadataRef.current;
+    if (!meta.userId || !meta.lessonId || !meta.sessionId) {
+      return;
+    }
+
+    const event = {
+      user_id: meta.userId,
+      class_id: meta.classId || null,
+      course_id: meta.courseId || null,
+      lesson_id: meta.lessonId,
+      session_id: meta.sessionId,
+      modality: "face",
+      emotion_label: emotionLabel,
+      confidence: Number(confidence || 0),
+      timestamp: new Date().toISOString(),
+      extra: extra || {},
+    };
+
+    queueRef.current.push(event);
+    setQueueSize(queueRef.current.length);
+  }
 
   function stopDetectionLoop() {
     if (detectionTimerRef.current) {
@@ -116,6 +204,7 @@ export default function useEmotionTracker({
     }
     captureBusyRef.current = false;
     setTrackingActive(false);
+    setFaceDetectionState("not_detected");
     noFaceIntervalsRef.current = 0;
     setFaceStats((current) => ({
       ...current,
@@ -142,11 +231,18 @@ export default function useEmotionTracker({
     try {
       await apiRequest("/emotions/batch", "POST", { events: batch }, token, { timeoutMs: 15000, retryCount: 0 });
       setFlushError("");
+      setFaceEventsSent((current) => current + batch.length);
+      console.debug("[MELD][FaceBatch] Sent", {
+        count: batch.length,
+        lessonId: metadataRef.current.lessonId,
+        sessionId: metadataRef.current.sessionId,
+      });
     } catch (error) {
       queueRef.current = [...batch, ...queueRef.current];
       setQueueSize(queueRef.current.length);
       setFlushError(error.message || "Batch send failed");
       setStatusText("Emotion tracking ON (batch retry pending)");
+      console.warn("[MELD][FaceBatch] Send failed", error?.message || error);
     } finally {
       flushBusyRef.current = false;
     }
@@ -156,7 +252,6 @@ export default function useEmotionTracker({
     if (modelsLoadedRef.current) {
       return;
     }
-
     setStatusText("Loading face models...");
     await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
     await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
@@ -166,39 +261,75 @@ export default function useEmotionTracker({
   async function ensureCameraReady() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatusText("Camera not supported. Continuing without tracking.");
+      setCameraState("off");
       return false;
     }
 
-    if (streamRef.current) {
+    if (streamRef.current && webcamRef.current?.srcObject) {
+      setCameraState("on");
       return true;
     }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
-      });
+    let lastError = null;
+    for (let attempt = 0; attempt <= CAMERA_MAX_RETRIES; attempt += 1) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+          },
+          audio: false,
+        });
 
-      streamRef.current = stream;
-      setPermissionDenied(false);
+        const videoElement = webcamRef.current;
+        if (!videoElement) {
+          stream.getTracks().forEach((track) => track.stop());
+          throw new Error("Camera preview element unavailable");
+        }
 
-      if (webcamRef.current) {
-        webcamRef.current.srcObject = stream;
-        await webcamRef.current.play().catch(() => {});
+        videoElement.autoplay = true;
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        videoElement.srcObject = stream;
+        await waitForVideoMetadata(videoElement, 5000);
+        await videoElement.play();
+
+        stream.getVideoTracks().forEach((track) => {
+          track.onended = () => {
+            setCameraState("off");
+            setStatusText("Camera disconnected. Retrying...");
+          };
+        });
+
+        streamRef.current = stream;
+        setPermissionDenied(false);
+        setCameraState("on");
+        setStatusText("Emotion tracking ON");
+        console.debug("[MELD][Camera] started", {
+          attempt: attempt + 1,
+          hasPreview: Boolean(showCameraPreview),
+        });
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (isPermissionDeniedError(error)) {
+          setPermissionDenied(true);
+          setCameraState("off");
+          setStatusText("Camera permission denied. Lesson continues without tracking.");
+          setTrackingActive(false);
+          return false;
+        }
+
+        if (attempt < CAMERA_MAX_RETRIES) {
+          await sleep(CAMERA_RETRY_DELAY_MS);
+        }
       }
-
-      return true;
-    } catch (error) {
-      if (isPermissionDeniedError(error)) {
-        setPermissionDenied(true);
-        setStatusText("Camera permission denied. Lesson continues without tracking.");
-        setTrackingActive(false);
-        return false;
-      }
-
-      setStatusText(`Camera error: ${error.message || "Unable to access camera"}`);
-      return false;
     }
+
+    setCameraState("off");
+    setStatusText(`Camera error: ${lastError?.message || "Unable to access camera"}`);
+    return false;
   }
 
   function stopCamera() {
@@ -209,6 +340,7 @@ export default function useEmotionTracker({
     if (webcamRef.current) {
       webcamRef.current.srcObject = null;
     }
+    setCameraState("off");
   }
 
   function stopTracking({ flush = true } = {}) {
@@ -226,17 +358,14 @@ export default function useEmotionTracker({
     if (!trackingEnabledRef.current) {
       return;
     }
-
     if (!lessonStartedRef.current) {
       setStatusText("Tracking armed. Camera permission will be requested on Play.");
       return;
     }
-
     if (!meta.sessionId) {
       setStatusText("Tracking armed. Start a session first in Discussion.");
       return;
     }
-
     if (permissionDeniedRef.current) {
       setStatusText("Camera permission denied. Lesson continues without tracking.");
       return;
@@ -255,11 +384,11 @@ export default function useEmotionTracker({
 
     if (detectionTimerRef.current) {
       setTrackingActive(true);
-      setStatusText("Emotion tracking ON");
       return;
     }
 
     setTrackingActive(true);
+    setFaceDetectionState("running");
     setStatusText("Emotion tracking ON");
 
     detectionTimerRef.current = window.setInterval(async () => {
@@ -272,14 +401,13 @@ export default function useEmotionTracker({
       if (!webcamRef.current || webcamRef.current.readyState < 2) {
         return;
       }
-      const currentMeta = metadataRef.current;
 
+      const currentMeta = metadataRef.current;
       if (!currentMeta.sessionId) {
         return;
       }
 
       captureBusyRef.current = true;
-
       try {
         const detections = await faceapi
           .detectAllFaces(webcamRef.current, new faceapi.TinyFaceDetectorOptions())
@@ -288,8 +416,11 @@ export default function useEmotionTracker({
 
         if (facesCount === 0) {
           noFaceIntervalsRef.current += 1;
+          setFaceDetectionState("not_detected");
         } else {
           noFaceIntervalsRef.current = 0;
+          setHasFaceCapture(true);
+          setFaceDetectionState("running");
         }
 
         setFaceStats((current) => ({
@@ -303,29 +434,38 @@ export default function useEmotionTracker({
           updatedAt: new Date().toISOString(),
         }));
 
+        if (facesCount === 0 && noFaceIntervalsRef.current >= NO_FACE_EVENT_STREAK && noFaceIntervalsRef.current % NO_FACE_EVENT_STREAK === 0) {
+          queueFaceEvent({
+            emotionLabel: "no_face_detected",
+            confidence: 0,
+            extra: {
+              face_detected: false,
+              faces_count: 0,
+              no_face_intervals: noFaceIntervalsRef.current,
+            },
+          });
+          setLastEmotion("no_face_detected");
+          setLastConfidence(0);
+          return;
+        }
+
         const top = getTopExpressionFromDetections(detections);
         if (!top || top.confidence < MIN_CONFIDENCE) {
           return;
         }
 
-        const event = {
-          userId: currentMeta.userId,
-          courseId: currentMeta.courseId,
-          lessonId: currentMeta.lessonId,
-          sessionId: currentMeta.sessionId,
-          timestamp: new Date().toISOString(),
-          emotion: top.emotion,
-          confidence: Number(top.confidence.toFixed(4)),
+        const confidence = Number(top.confidence.toFixed(4));
+        queueFaceEvent({
+          emotionLabel: top.emotion,
+          confidence,
           extra: {
-            face_detected: facesCount > 0,
+            face_detected: true,
             faces_count: facesCount,
+            no_face_intervals: noFaceIntervalsRef.current,
           },
-        };
-
-        queueRef.current.push(event);
-        setQueueSize(queueRef.current.length);
+        });
         setLastEmotion(top.emotion);
-        setLastConfidence(event.confidence);
+        setLastConfidence(confidence);
       } catch (error) {
         setStatusText(`Tracker error: ${error.message || "Detection failed"}`);
       } finally {
@@ -352,8 +492,8 @@ export default function useEmotionTracker({
         void startDetectionLoop();
       } else {
         setStatusText("Tracking armed. Camera permission will be requested on Play.");
-        setFaceStats((current) => ({
-          ...current,
+        setFaceStats((currentFaceStats) => ({
+          ...currentFaceStats,
           trackingEnabled: true,
           trackerActive: false,
           faceDetected: false,
@@ -384,6 +524,12 @@ export default function useEmotionTracker({
     stopCamera();
     setStatusText(trackingEnabledRef.current ? "Tracking armed. Camera permission will be requested on Play." : "Emotion tracking OFF");
     noFaceIntervalsRef.current = 0;
+    setFaceDetectionState("not_detected");
+    setHasFaceCapture(false);
+    setFaceEventsSent(0);
+    setQueueSize(0);
+    setFlushError("");
+    queueRef.current = [];
     setFaceStats((current) => ({
       ...current,
       trackerActive: false,
@@ -401,13 +547,12 @@ export default function useEmotionTracker({
     if (lessonStartedRef.current) {
       void startDetectionLoop();
     }
-  }, [sessionId, userId, courseId, lessonId, permissionDenied]);
+  }, [sessionId, userId, courseId, classId, lessonId, permissionDenied]);
 
   useEffect(() => {
     if (flushTimerRef.current) {
       window.clearInterval(flushTimerRef.current);
     }
-
     flushTimerRef.current = window.setInterval(() => {
       void flushQueue();
     }, FLUSH_INTERVAL_MS);
@@ -441,6 +586,9 @@ export default function useEmotionTracker({
     lastConfidence,
     flushError,
     faceStats,
+    cameraState,
+    faceDetectionState,
+    faceEventsSent,
+    hasFaceCapture,
   };
 }
-

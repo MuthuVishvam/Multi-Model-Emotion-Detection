@@ -240,6 +240,39 @@ async def ensure_platform_indexes() -> None:
     )
 
     await _create_index_safe(
+        db.lesson_progress,
+        [("lesson_id", ASCENDING), ("session_id", ASCENDING), ("user_id", ASCENDING)],
+        unique=True,
+        name="lesson_progress_lesson_session_user_uq",
+        partialFilterExpression={
+            "lesson_id": {"$type": "string"},
+            "session_id": {"$type": "string"},
+            "user_id": {"$type": "string"},
+        },
+    )
+    await _create_index_safe(
+        db.lesson_progress,
+        [("lesson_id", ASCENDING), ("class_id", ASCENDING), ("updated_at", DESCENDING)],
+        name="lesson_progress_lesson_class_updated",
+    )
+    await _create_index_safe(
+        db.lesson_completions,
+        [("lesson_id", ASCENDING), ("session_id", ASCENDING), ("user_id", ASCENDING)],
+        unique=True,
+        name="lesson_completions_lesson_session_user_uq",
+        partialFilterExpression={
+            "lesson_id": {"$type": "string"},
+            "session_id": {"$type": "string"},
+            "user_id": {"$type": "string"},
+        },
+    )
+    await _create_index_safe(
+        db.lesson_completions,
+        [("lesson_id", ASCENDING), ("class_id", ASCENDING), ("completed_at", DESCENDING)],
+        name="lesson_completions_lesson_class_completed",
+    )
+
+    await _create_index_safe(
         db.lesson_assignments,
         [("class_id", ASCENDING), ("lesson_id", ASCENDING)],
         unique=True,

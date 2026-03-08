@@ -397,6 +397,17 @@ export async function fetchLessonStudentsAnalytics(lessonId, filters = {}) {
   return apiRequest(`/analytics/lesson/${lessonId}/students${query}`, "GET", null, token);
 }
 
+export async function fetchLessonProgressAnalytics(lessonId, filters = {}) {
+  const token = localStorage.getItem("token") || "";
+  const query = buildAnalyticsQuery(filters);
+  return apiRequest(`/analytics/lesson/${lessonId}/progress${query}`, "GET", null, token);
+}
+
+export async function updateLessonProgress(lessonId, payload) {
+  const token = localStorage.getItem("token") || "";
+  return apiRequest(`/lessons/${lessonId}/progress`, "POST", payload, token);
+}
+
 function buildFeedbackQuery({ lessonId = "", classId = "", limit = 100 } = {}) {
   const params = new URLSearchParams();
   if (lessonId) {

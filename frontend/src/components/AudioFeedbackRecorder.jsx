@@ -140,6 +140,7 @@ export default function AudioFeedbackRecorder({
   const [isUploading, setIsUploading] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [lastVoiceResult, setLastVoiceResult] = useState(null);
+  const [uploadState, setUploadState] = useState("idle");
 
   function clearTimers() {
     if (intervalRef.current) {
@@ -210,6 +211,7 @@ export default function AudioFeedbackRecorder({
     const seconds = recordingSecondsRef.current;
     if (seconds < MIN_RECORD_SECONDS) {
       setErrorText(`Please record at least ${MIN_RECORD_SECONDS} seconds.`);
+      setUploadState("failed");
       stopStream();
       return;
     }
@@ -218,11 +220,13 @@ export default function AudioFeedbackRecorder({
     const mediaBlob = new Blob(chunksRef.current, { type: recordedMimeType });
     if (mediaBlob.size === 0) {
       setErrorText("No audio captured. Please try recording again.");
+      setUploadState("failed");
       stopStream();
       return;
     }
 
     setIsUploading(true);
+    setUploadState("uploading");
     setErrorText("");
     const timestamp = new Date().toISOString();
 
@@ -238,7 +242,14 @@ export default function AudioFeedbackRecorder({
       const fileName = `voice-feedback-${Date.now()}.${extension}`;
 
       const prediction = await uploadAudioBlob(uploadBlob, timestamp, fileName);
+      console.debug("[MELD][Voice] upload processed", {
+        lessonId,
+        sessionId,
+        emotion: prediction?.emotion,
+        confidence: Number(prediction?.confidence || 0),
+      });
       setLastVoiceResult(prediction);
+      setUploadState("processed");
       onStatusMessage?.(`Voice feedback tagged as ${prediction.emotion} (${Number(prediction.confidence || 0).toFixed(2)}).`);
       onPrediction?.({
         emotion: prediction.emotion,
@@ -251,6 +262,7 @@ export default function AudioFeedbackRecorder({
       });
     } catch (error) {
       setErrorText(error.message || "Voice upload failed.");
+      setUploadState("failed");
     } finally {
       setIsUploading(false);
       stopStream();
@@ -268,15 +280,18 @@ export default function AudioFeedbackRecorder({
   async function startRecording() {
     if (!sessionId) {
       setErrorText("Start a session first before recording feedback.");
+      setUploadState("failed");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setErrorText("Audio recording is not supported in this browser.");
+      setUploadState("failed");
       return;
     }
 
     setErrorText("");
     setLastVoiceResult(null);
+    setUploadState("recording");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -299,6 +314,7 @@ export default function AudioFeedbackRecorder({
 
       recorder.onerror = () => {
         setErrorText("Recording failed. Please try again.");
+        setUploadState("failed");
         stopStream();
         setIsRecording(false);
       };
@@ -324,6 +340,7 @@ export default function AudioFeedbackRecorder({
       } else {
         setErrorText(error.message || "Unable to access microphone.");
       }
+      setUploadState("failed");
       stopStream();
       setIsRecording(false);
     }
@@ -366,6 +383,10 @@ export default function AudioFeedbackRecorder({
       )}
 
       {isUploading && <p className="small-note">Uploading and classifying voice emotion...</p>}
+      {uploadState === "recording" && <p className="small-note">Status: Recording...</p>}
+      {uploadState === "uploading" && <p className="small-note">Status: Uploading...</p>}
+      {uploadState === "processed" && <p className="small-note">Status: Processed</p>}
+      {uploadState === "failed" && <p className="small-note">Status: Failed</p>}
 
       {lastVoiceResult && (
         <p className="small-note">
@@ -379,4 +400,3 @@ export default function AudioFeedbackRecorder({
     </div>
   );
 }
-

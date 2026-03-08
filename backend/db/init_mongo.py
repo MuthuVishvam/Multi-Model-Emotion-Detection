@@ -91,6 +91,8 @@ def main() -> None:
     ensure_collection_exists(db, "notifications")
     ensure_collection_exists(db, "comments")
     ensure_collection_exists(db, "voice_feedback")
+    ensure_collection_exists(db, "lesson_progress")
+    ensure_collection_exists(db, "lesson_completions")
 
     create_indexes(db)
 

@@ -5,6 +5,7 @@ from app.dependencies import get_current_user, require_teacher
 from app.models import (
     LessonModalityAnalyticsResponse,
     LessonOverallAnalyticsResponse,
+    LessonProgressAnalyticsResponse,
     LessonStudentsAnalyticsResponse,
 )
 from app.services.emotion_event_analytics import emotion_event_analytics_service
@@ -113,3 +114,17 @@ async def get_lesson_students_analytics(
         end_at=end_at,
     )
     return LessonStudentsAnalyticsResponse(**result)
+
+
+@router.get("/lesson/{lesson_id}/progress", response_model=LessonProgressAnalyticsResponse)
+async def get_lesson_progress_analytics(
+    lesson_id: str,
+    class_id: str | None = Query(default=None),
+    teacher_user: dict = Depends(require_teacher),
+) -> LessonProgressAnalyticsResponse:
+    await _ensure_lesson_access(teacher_user, lesson_id, class_id=class_id)
+    result = await emotion_event_analytics_service.get_lesson_progress_analytics(
+        lesson_id=lesson_id,
+        class_id=class_id,
+    )
+    return LessonProgressAnalyticsResponse(**result)

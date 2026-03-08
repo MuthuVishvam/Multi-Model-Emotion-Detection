@@ -557,12 +557,15 @@ class EmotionEventAnalyticsService:
             modality_emotion_rows,
             span_rows,
             attention_rows,
+            face_no_face_rows,
             attention_watch_rows,
             attention_last_rows,
             emotion_timeline_rows,
             attention_timeline_rows,
             text_rows,
             voice_rows,
+            progress_rows,
+            completion_rows,
             lesson_duration_seconds,
         ) = await asyncio.gather(
             db.emotion_events.aggregate(
@@ -610,6 +613,17 @@ class EmotionEventAnalyticsService:
                     {
                         "$group": {
                             "_id": {"user_id": "$user_id", "state": "$state"},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                ]
+            ).to_list(length=None),
+            db.emotion_events.aggregate(
+                [
+                    {"$match": {**emotion_match, "modality": "face", "emotion_label": "no_face_detected"}},
+                    {
+                        "$group": {
+                            "_id": "$user_id",
                             "count": {"$sum": 1},
                         }
                     },
@@ -705,6 +719,20 @@ class EmotionEventAnalyticsService:
                     "extra": 1,
                 },
             ).sort("timestamp", -1).to_list(length=2000),
+            db.lesson_progress.find(
+                {
+                    "lesson_id": lesson_id,
+                    **({"class_id": class_id} if class_id else {}),
+                },
+                {"_id": 0},
+            ).to_list(length=None),
+            db.lesson_completions.find(
+                {
+                    "lesson_id": lesson_id,
+                    **({"class_id": class_id} if class_id else {}),
+                },
+                {"_id": 0},
+            ).to_list(length=None),
             self._get_lesson_duration_seconds(lesson_id),
         )
 
@@ -753,6 +781,13 @@ class EmotionEventAnalyticsService:
             user_id = str(raw_user)
             attention_by_user.setdefault(user_id, {})
             attention_by_user[user_id][state] = _safe_int(row.get("count"))
+
+        no_face_from_face_events: dict[str, int] = {}
+        for row in face_no_face_rows:
+            raw_user = row.get("_id")
+            if not raw_user:
+                continue
+            no_face_from_face_events[str(raw_user)] = _safe_int(row.get("count"))
 
         watch_seconds_by_user: dict[str, int] = {}
         for row in attention_watch_rows:
@@ -860,6 +895,25 @@ class EmotionEventAnalyticsService:
                 }
             )
 
+        progress_by_user: dict[str, dict] = {}
+        for row in progress_rows:
+            raw_user = row.get("user_id")
+            if not raw_user:
+                continue
+            user_id = str(raw_user)
+            existing = progress_by_user.get(user_id)
+            candidate_updated = _as_utc(row.get("updated_at")) or _utc_now()
+            existing_updated = _as_utc((existing or {}).get("updated_at")) if existing else None
+            if not existing or not existing_updated or candidate_updated >= existing_updated:
+                progress_by_user[user_id] = row
+
+        completion_by_user: dict[str, bool] = {}
+        for row in completion_rows:
+            raw_user = row.get("user_id")
+            if not raw_user:
+                continue
+            completion_by_user[str(raw_user)] = bool(row.get("completed", True))
+
         all_user_ids = sorted(
             {
                 *emotion_by_user.keys(),
@@ -869,6 +923,8 @@ class EmotionEventAnalyticsService:
                 *timeline_by_user.keys(),
                 *text_by_user.keys(),
                 *voice_by_user.keys(),
+                *progress_by_user.keys(),
+                *completion_by_user.keys(),
             }
         )
         student_labels = await self._resolve_student_labels(all_user_ids)
@@ -904,6 +960,10 @@ class EmotionEventAnalyticsService:
             focused_percent = attention_percentages.get("focused", 0.0)
             dominant_attention = _dominant_label(attention_states)
             attention_summary = _build_attention_summary_text(attention_percentages)
+            no_face_detected = _safe_int(attention_states.get("no_face", 0)) + _safe_int(
+                attention_states.get("no_face_detected", 0)
+            )
+            no_face_detected += _safe_int(no_face_from_face_events.get(user_id, 0))
 
             last_seen_candidates: list[datetime] = []
             if isinstance(max_ts, datetime):
@@ -945,6 +1005,12 @@ class EmotionEventAnalyticsService:
                 )
 
             student_name = student_labels.get(user_id) or user_id
+            progress_doc = progress_by_user.get(user_id, {})
+            progress_watch_seconds = _safe_int(progress_doc.get("watched_time_sec"), default=0)
+            progress_completed = bool(progress_doc.get("completed", False))
+            if progress_watch_seconds > watch_time_seconds:
+                watch_time_seconds = progress_watch_seconds
+            lesson_completed = bool(completion_by_user.get(user_id, False) or progress_completed)
             text_comments = text_by_user.get(user_id, [])[:50]
             for item in text_comments:
                 item["student_name"] = student_name
@@ -968,6 +1034,8 @@ class EmotionEventAnalyticsService:
                     "attention_score": round(focused_percent, 2),
                     "dominant_attention_state": dominant_attention,
                     "attention_state_summary": attention_summary,
+                    "no_face_detected": no_face_detected,
+                    "lesson_completed": lesson_completed,
                     "emotion_event_count": event_count,
                     "attention_state_breakdown": attention_states,
                     "attention_state_percentages": attention_percentages,
@@ -981,16 +1049,136 @@ class EmotionEventAnalyticsService:
 
         for student in students:
             watch_time_seconds = _safe_int(student.get("watch_time_seconds"))
+            progress_doc = progress_by_user.get(student.get("user_id", ""), {})
+            progress_completion_percent = _safe_float(progress_doc.get("completion_percent"), default=0.0)
             if lesson_duration_seconds > 0:
                 completion_percent = min(100.0, round((watch_time_seconds / lesson_duration_seconds) * 100.0, 2))
             elif max_watch_time_seconds > 0:
                 completion_percent = round((watch_time_seconds / max_watch_time_seconds) * 100.0, 2)
             else:
                 completion_percent = 0.0
+            if progress_completion_percent > completion_percent:
+                completion_percent = progress_completion_percent
             student["completion_percent"] = completion_percent
+            student["lesson_completed"] = bool(
+                student.get("lesson_completed") or completion_by_user.get(student.get("user_id", ""), False)
+            )
 
         students.sort(key=lambda item: item.get("watch_time_seconds", 0), reverse=True)
         return {"lesson_id": lesson_id, "students": students}
+
+    async def get_lesson_progress_analytics(self, *, lesson_id: str, class_id: str | None = None) -> dict:
+        progress_match = {"lesson_id": lesson_id}
+        if class_id:
+            progress_match["class_id"] = class_id
+
+        progress_rows, completion_rows, no_face_rows, no_face_emotion_rows = await asyncio.gather(
+            db.lesson_progress.find(progress_match, {"_id": 0}).to_list(length=None),
+            db.lesson_completions.find({**progress_match, "completed": True}, {"_id": 0, "user_id": 1}).to_list(length=None),
+            db.attention_events.aggregate(
+                [
+                    {"$match": {"lesson_id": lesson_id, "state": {"$in": ["no_face", "no_face_detected"]}}},
+                    {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+            db.emotion_events.aggregate(
+                [
+                    {
+                        "$match": {
+                            "lesson_id": lesson_id,
+                            "modality": "face",
+                            "emotion_label": "no_face_detected",
+                            **({"class_id": class_id} if class_id else {}),
+                        }
+                    },
+                    {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                ]
+            ).to_list(length=None),
+        )
+
+        completion_user_ids = {str(row.get("user_id")) for row in completion_rows if row.get("user_id")}
+        no_face_map: dict[str, int] = {}
+        for row in no_face_rows:
+            raw_user = row.get("_id")
+            if not raw_user:
+                continue
+            no_face_map[str(raw_user)] = _safe_int(row.get("count"))
+        for row in no_face_emotion_rows:
+            raw_user = row.get("_id")
+            if not raw_user:
+                continue
+            user_id = str(raw_user)
+            no_face_map[user_id] = _safe_int(no_face_map.get(user_id, 0)) + _safe_int(row.get("count"))
+
+        known_user_ids = {str(row.get("user_id")) for row in progress_rows if row.get("user_id")} | completion_user_ids
+        student_labels = await self._resolve_student_labels(sorted(known_user_ids))
+
+        students: list[dict] = []
+        seen_user_ids: set[str] = set()
+        for row in progress_rows:
+            raw_user = row.get("user_id")
+            if not raw_user:
+                continue
+            user_id = str(raw_user)
+            seen_user_ids.add(user_id)
+            watched_time_sec = max(0, _safe_int(row.get("watched_time_sec")))
+            completion_percent = max(0.0, min(100.0, _safe_float(row.get("completion_percent"))))
+            lesson_completed = bool(row.get("completed", False) or user_id in completion_user_ids)
+            students.append(
+                {
+                    "user_id": user_id,
+                    "student_name": student_labels.get(user_id, user_id),
+                    "watched_time_sec": watched_time_sec,
+                    "completion_percent": completion_percent,
+                    "lesson_completed": lesson_completed,
+                    "face_emotion_captured": bool(row.get("face_emotion_captured", False)),
+                    "text_feedback_sent": bool(row.get("text_feedback_sent", False)),
+                    "audio_feedback_sent": bool(row.get("audio_feedback_sent", False)),
+                    "watch_progress_completed": bool(row.get("watch_progress_completed", False)),
+                    "no_face_detected": no_face_map.get(user_id, 0),
+                    "updated_at": row.get("updated_at"),
+                }
+            )
+
+        for user_id in sorted(completion_user_ids):
+            if user_id in seen_user_ids:
+                continue
+            students.append(
+                {
+                    "user_id": user_id,
+                    "student_name": student_labels.get(user_id, user_id),
+                    "watched_time_sec": 0,
+                    "completion_percent": 100.0,
+                    "lesson_completed": True,
+                    "face_emotion_captured": False,
+                    "text_feedback_sent": False,
+                    "audio_feedback_sent": False,
+                    "watch_progress_completed": True,
+                    "no_face_detected": no_face_map.get(user_id, 0),
+                    "updated_at": None,
+                }
+            )
+
+        students.sort(
+            key=lambda row: (
+                int(bool(row.get("lesson_completed"))),
+                _safe_float(row.get("completion_percent")),
+                _safe_int(row.get("watched_time_sec")),
+            ),
+            reverse=True,
+        )
+
+        completion_count = sum(1 for row in students if row.get("lesson_completed"))
+        total_students_with_progress = len(students)
+        completion_rate_percent = round((completion_count / total_students_with_progress) * 100.0, 2) if total_students_with_progress else 0.0
+
+        return {
+            "lesson_id": lesson_id,
+            "completion_count": completion_count,
+            "total_students_with_progress": total_students_with_progress,
+            "completion_rate_percent": completion_rate_percent,
+            "students": students,
+        }
 
 
 emotion_event_analytics_service = EmotionEventAnalyticsService()

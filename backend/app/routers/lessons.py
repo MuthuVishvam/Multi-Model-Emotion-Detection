@@ -1,11 +1,23 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from datetime import datetime, timezone
+import logging
 
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from pymongo import ReturnDocument
+
+from app.database import db
 from app.dependencies import get_current_user, require_teacher
-from app.models import LessonAssignRequest, LessonAssignmentResponse, LessonManageResponse
+from app.models import (
+    LessonAssignRequest,
+    LessonAssignmentResponse,
+    LessonManageResponse,
+    LessonProgressUpdateRequest,
+    LessonProgressUpdateResponse,
+)
 from app.services.lesson_management import lesson_management_service
 
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
+logger = logging.getLogger("emotion_backend")
 
 
 async def _extract_create_payload(
@@ -199,3 +211,92 @@ async def delete_lesson(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
     return {"message": "Lesson deleted"}
+
+
+@router.post("/{lesson_id}/progress", response_model=LessonProgressUpdateResponse)
+async def update_lesson_progress(
+    lesson_id: str,
+    payload: LessonProgressUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> LessonProgressUpdateResponse:
+    await lesson_management_service.get_lesson_for_user(
+        current_user=current_user,
+        lesson_id=lesson_id,
+        class_id=payload.class_id,
+    )
+
+    now = datetime.now(timezone.utc)
+    user_id = str(current_user.get("id") or "")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid account")
+
+    progress_query = {
+        "lesson_id": lesson_id,
+        "session_id": payload.session_id,
+        "user_id": user_id,
+    }
+    progress_updates = {
+        "class_id": payload.class_id,
+        "watched_time_sec": int(payload.watched_time_sec),
+        "completion_percent": float(payload.completion_percent),
+        "completed": bool(payload.completed),
+        "face_emotion_captured": bool(payload.face_emotion_captured),
+        "text_feedback_sent": bool(payload.text_feedback_sent),
+        "audio_feedback_sent": bool(payload.audio_feedback_sent),
+        "watch_progress_completed": bool(payload.watch_progress_completed),
+        "updated_at": now,
+    }
+
+    updated = await db.lesson_progress.find_one_and_update(
+        progress_query,
+        {
+            "$set": progress_updates,
+            "$setOnInsert": {
+                "created_at": now,
+            },
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+
+    if payload.completed:
+        await db.lesson_completions.find_one_and_update(
+            progress_query,
+            {
+                "$set": {
+                    **progress_updates,
+                    "completed": True,
+                    "completed_at": now,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+
+    logger.info(
+        "lesson_progress updated user_id=%s lesson_id=%s session_id=%s completion=%.2f completed=%s",
+        user_id,
+        lesson_id,
+        payload.session_id,
+        float(payload.completion_percent),
+        bool(payload.completed),
+    )
+
+    return LessonProgressUpdateResponse(
+        lesson_id=updated.get("lesson_id", lesson_id),
+        session_id=updated.get("session_id", payload.session_id),
+        user_id=updated.get("user_id", user_id),
+        class_id=updated.get("class_id"),
+        watched_time_sec=int(updated.get("watched_time_sec", 0) or 0),
+        completion_percent=float(updated.get("completion_percent", 0.0) or 0.0),
+        completed=bool(updated.get("completed", False)),
+        face_emotion_captured=bool(updated.get("face_emotion_captured", False)),
+        text_feedback_sent=bool(updated.get("text_feedback_sent", False)),
+        audio_feedback_sent=bool(updated.get("audio_feedback_sent", False)),
+        watch_progress_completed=bool(updated.get("watch_progress_completed", False)),
+        updated_at=updated.get("updated_at") or now,
+    )
