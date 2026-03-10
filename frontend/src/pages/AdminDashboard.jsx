@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import StatCard from "../components/StatCard";
 import TeacherApprovalTable from "../components/TeacherApprovalTable";
@@ -81,12 +82,44 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="learning-page">
-      <section className="card">
-        <p className="eyebrow">Admin</p>
+    <div className="learning-page admin-dashboard-wrap">
+      <section className="card dashboard-hero dashboard-hero--admin">
+        <div className="dashboard-hero__content">
+          <p className="eyebrow">Admin</p>
+          <h2>Admin Dashboard</h2>
+          <p>Bring teacher approvals, account states, and class operations back into one clear dashboard flow.</p>
+        </div>
+
+        <div className="dashboard-highlight-row">
+          <div className="dashboard-highlight">
+            <span>Total teachers</span>
+            <strong>{summary.totalTeachers}</strong>
+          </div>
+          <div className="dashboard-highlight">
+            <span>Pending approvals</span>
+            <strong>{summary.pendingCount}</strong>
+          </div>
+          <div className="dashboard-highlight">
+            <span>Disabled accounts</span>
+            <strong>{summary.disabledCount}</strong>
+          </div>
+        </div>
+
+        <div className="dashboard-hero__actions">
+          <Link className="dashboard-action-link" to="/admin/teachers">
+            Manage Teachers
+          </Link>
+          <Link className="dashboard-action-link" to="/admin/classes">
+            View Classes
+          </Link>
+        </div>
+      </section>
+
+      <section className="card dashboard-filter-card">
         <div className="section-header-row">
           <div>
-            <h2>Admin Dashboard</h2>
+            <p className="eyebrow">Overview</p>
+            <h3>Teacher onboarding and account status</h3>
             <p className="small-note">Review teacher onboarding, approvals, and account states.</p>
           </div>
           <button className="secondary" onClick={loadTeachers} disabled={loading}>

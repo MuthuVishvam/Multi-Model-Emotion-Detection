@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -421,9 +422,44 @@ export default function TeacherDashboardPage() {
 
   return (
     <div className="learning-page teacher-analytics-page teacher-dashboard-page">
-      <section className="card">
+      <section className="card dashboard-hero dashboard-hero--teacher">
+        <div className="dashboard-hero__content">
+          <p className="eyebrow">Teacher Dashboard</p>
+          <h2>Multi-modal Lesson Dashboard</h2>
+          <p>Track engagement, attention, and lesson completion from a simpler full-width workspace.</p>
+        </div>
+
+        <div className="dashboard-highlight-row">
+          <div className="dashboard-highlight">
+            <span>Classes</span>
+            <strong>{classes.length}</strong>
+          </div>
+          <div className="dashboard-highlight">
+            <span>Lessons</span>
+            <strong>{lessons.length}</strong>
+          </div>
+          <div className="dashboard-highlight">
+            <span>Date range</span>
+            <strong>{startDate || endDate ? "Custom" : "All time"}</strong>
+          </div>
+        </div>
+
+        <div className="dashboard-hero__actions">
+          <Link className="dashboard-action-link" to="/teacher/classes">
+            My Classes
+          </Link>
+          <Link className="dashboard-action-link" to="/teacher/lessons">
+            Lesson Studio
+          </Link>
+          <Link className="dashboard-action-link" to="/teacher/live/control">
+            Live Control
+          </Link>
+        </div>
+      </section>
+
+      <section className="card dashboard-filter-card">
         <p className="eyebrow">Teacher Dashboard</p>
-        <h2>Multi-modal Lesson Dashboard</h2>
+        <h3>Analytics Filters</h3>
         <p className="small-note">Filter by class, lesson, and date range to review engagement and per-student drilldowns.</p>
 
         <div className="teacher-analytics-filters">
@@ -696,4 +732,3 @@ export default function TeacherDashboardPage() {
     </div>
   );
 }
-

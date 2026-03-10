@@ -1398,6 +1398,119 @@ button.danger {
   margin-top: 0;
 }
 
+.dashboard-hero {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  overflow: hidden;
+  border: none;
+  color: #f8fafc;
+}
+
+.dashboard-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.18), transparent 36%);
+  pointer-events: none;
+}
+
+.dashboard-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-hero .eyebrow {
+  color: rgba(248, 250, 252, 0.8);
+}
+
+.dashboard-hero__content {
+  display: grid;
+  gap: 8px;
+  max-width: 70ch;
+}
+
+.dashboard-hero__content h2,
+.dashboard-hero__content p {
+  margin: 0;
+}
+
+.dashboard-hero__content h2 {
+  font-size: clamp(1.7rem, 2.6vw, 2.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.dashboard-highlight-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-highlight {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.dashboard-highlight span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.dashboard-highlight strong {
+  font-size: 1.05rem;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.dashboard-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dashboard-action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(15, 23, 42, 0.18);
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-action-link:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.dashboard-hero--teacher {
+  background:
+    radial-gradient(circle at 14% 12%, rgba(167, 243, 208, 0.28), transparent 32%),
+    linear-gradient(135deg, #14532d 0%, #0f766e 54%, #0f172a 100%);
+}
+
+.dashboard-hero--admin {
+  background:
+    radial-gradient(circle at 18% 15%, rgba(254, 243, 199, 0.24), transparent 34%),
+    linear-gradient(135deg, #7c2d12 0%, #ea580c 52%, #1e293b 100%);
+}
+
+.dashboard-filter-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.96));
+}
+
 .stats-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1804,9 +1917,14 @@ button.danger {
   color: #f8fafc;
 }
 
-.teacher-dashboard-wrap .teacher-dashboard-page > .card:first-child {
-  border: 1px solid rgba(20, 83, 45, 0.2);
-  background: linear-gradient(145deg, #f0fdf4, #ffffff);
+.teacher-dashboard-wrap .dashboard-filter-card {
+  border: 1px solid rgba(20, 83, 45, 0.12);
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.78), rgba(255, 255, 255, 0.97));
+}
+
+.admin-dashboard-wrap .dashboard-filter-card {
+  border: 1px solid rgba(194, 65, 12, 0.12);
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.84), rgba(255, 255, 255, 0.97));
 }
 
 .hint-box {
@@ -1941,6 +2059,7 @@ button.danger {
   .stats-row,
   .chart-grid,
   .capture-grid,
+  .dashboard-highlight-row,
   .analytics-summary-grid,
   .analytics-modality-grid,
   .analytics-detail-grid {
@@ -1971,6 +2090,7 @@ button.danger {
 
   .lesson-page-header__actions,
   .dashboard-page-hero__actions,
+  .dashboard-hero__actions,
   .hero-action-row {
     width: 100%;
   }
@@ -1981,7 +2101,8 @@ button.danger {
   .dashboard-page-hero__actions button,
   .teacher-analytics-filter-actions button,
   .hero-action-row button,
-  .hero-action-row .button-link {
+  .hero-action-row .button-link,
+  .dashboard-hero__actions .dashboard-action-link {
     width: 100%;
     justify-content: center;
   }
