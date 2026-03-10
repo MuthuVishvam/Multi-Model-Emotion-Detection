@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   Pie,
   PieChart,
@@ -18,8 +19,7 @@ import {
   fetchLiveOverallAnalytics,
   fetchLiveStudentsAnalytics,
 } from "../services/api";
-
-const PIE_COLORS = ["#2563eb", "#0ea5e9", "#10b981", "#f59e0b", "#f97316", "#ef4444", "#8b5cf6", "#64748b"];
+import { CHART_AXIS_COLOR, CHART_GRID_COLOR, getChartColor } from "../chartColors";
 
 function toDistributionData(percentages = {}, counts = {}) {
   const keys = Object.keys(percentages || {});
@@ -169,8 +169,8 @@ export default function LiveEmotionDashboard() {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={overallPie} dataKey="value" nameKey="label" outerRadius={80} label />
-              {overallPie.map((_, index) => (
-                <Cell key={`overall-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+              {overallPie.map((entry, index) => (
+                <Cell key={`overall-${index}`} fill={getChartColor(entry.label, index)} />
               ))}
               <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
             </PieChart>
@@ -182,8 +182,8 @@ export default function LiveEmotionDashboard() {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={facePie} dataKey="value" nameKey="label" outerRadius={80} label />
-              {facePie.map((_, index) => (
-                <Cell key={`face-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+              {facePie.map((entry, index) => (
+                <Cell key={`face-${index}`} fill={getChartColor(entry.label, index)} />
               ))}
               <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
             </PieChart>
@@ -194,10 +194,15 @@ export default function LiveEmotionDashboard() {
           <h3>Text</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={textBar}>
-              <XAxis dataKey="emotion" />
-              <YAxis />
+              <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+              <XAxis dataKey="emotion" stroke={CHART_AXIS_COLOR} />
+              <YAxis stroke={CHART_AXIS_COLOR} />
               <Tooltip />
-              <Bar dataKey="count" fill="#0ea5e9" />
+              <Bar dataKey="count">
+                {textBar.map((entry, index) => (
+                  <Cell key={`text-bar-${entry.emotion}-${index}`} fill={getChartColor(entry.emotion, index)} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </article>
@@ -207,8 +212,8 @@ export default function LiveEmotionDashboard() {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={voicePie} dataKey="value" nameKey="label" outerRadius={80} label />
-              {voicePie.map((_, index) => (
-                <Cell key={`voice-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+              {voicePie.map((entry, index) => (
+                <Cell key={`voice-${index}`} fill={getChartColor(entry.label, index)} />
               ))}
               <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
             </PieChart>

@@ -24,8 +24,7 @@ import {
   fetchLessonStudentsAnalytics,
   fetchMyClasses,
 } from "../services/api";
-
-const PIE_COLORS = ["#2563eb", "#0ea5e9", "#10b981", "#f59e0b", "#f97316", "#ef4444", "#8b5cf6", "#64748b"];
+import { CHART_AXIS_COLOR, CHART_GRID_COLOR, getChartColor } from "../chartColors";
 
 function buildIsoStart(dateValue) {
   if (!dateValue) {
@@ -124,16 +123,16 @@ function StudentDetailModal({ student, onClose }) {
           <h4>Emotion + Attention Timeline</h4>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={timelineData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="minute" minTickGap={20} />
-              <YAxis />
+              <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+              <XAxis dataKey="minute" minTickGap={20} stroke={CHART_AXIS_COLOR} />
+              <YAxis stroke={CHART_AXIS_COLOR} />
               <Tooltip />
               <Legend />
-              <Line type="monotone" dataKey="emotion_total" stroke="#2563eb" strokeWidth={2} />
-              <Line type="monotone" dataKey="focused" stroke="#10b981" strokeWidth={2} />
-              <Line type="monotone" dataKey="no_face" stroke="#f97316" />
-              <Line type="monotone" dataKey="away" stroke="#ef4444" />
-              <Line type="monotone" dataKey="idle" stroke="#8b5cf6" />
+              <Line type="monotone" dataKey="emotion_total" stroke={getChartColor("emotion_total")} strokeWidth={2} />
+              <Line type="monotone" dataKey="focused" stroke={getChartColor("focused")} strokeWidth={2} />
+              <Line type="monotone" dataKey="no_face" stroke={getChartColor("no_face")} />
+              <Line type="monotone" dataKey="away" stroke={getChartColor("away")} />
+              <Line type="monotone" dataKey="idle" stroke={getChartColor("idle")} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -538,8 +537,8 @@ export default function TeacherDashboardPage() {
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={overallPieData} dataKey="value" nameKey="label" outerRadius={85} label />
-                  {overallPieData.map((_, index) => (
-                    <Cell key={`overall-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  {overallPieData.map((entry, index) => (
+                    <Cell key={`overall-${index}`} fill={getChartColor(entry.label, index)} />
                   ))}
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                   <Legend />
@@ -576,8 +575,8 @@ export default function TeacherDashboardPage() {
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
                   <Pie data={completionPieData} dataKey="value" nameKey="label" outerRadius={60} label />
-                  {completionPieData.map((_, index) => (
-                    <Cell key={`completion-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  {completionPieData.map((entry, index) => (
+                    <Cell key={`completion-${index}`} fill={getChartColor(entry.label, index)} />
                   ))}
                   <Tooltip />
                 </PieChart>
@@ -597,22 +596,22 @@ export default function TeacherDashboardPage() {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie data={facePieData} dataKey="value" nameKey="label" outerRadius={75} label />
-                  {facePieData.map((_, index) => (
-                    <Cell key={`face-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  {facePieData.map((entry, index) => (
+                    <Cell key={`face-${index}`} fill={getChartColor(entry.label, index)} />
                   ))}
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                 </PieChart>
               </ResponsiveContainer>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={faceTimelineData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="minute" minTickGap={20} />
-                  <YAxis />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                  <XAxis dataKey="minute" minTickGap={20} stroke={CHART_AXIS_COLOR} />
+                  <YAxis stroke={CHART_AXIS_COLOR} />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2} />
+                  <Line type="monotone" dataKey="total" stroke={getChartColor("total")} strokeWidth={2} />
                   {faceEmotionLines.map((emotion, index) => (
-                    <Line key={emotion} type="monotone" dataKey={emotion} stroke={PIE_COLORS[(index + 2) % PIE_COLORS.length]} />
+                    <Line key={emotion} type="monotone" dataKey={emotion} stroke={getChartColor(emotion, index + 1)} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
@@ -622,18 +621,22 @@ export default function TeacherDashboardPage() {
               <h3>Text</h3>
               <ResponsiveContainer width="100%" height={210}>
                 <BarChart data={textBarData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="emotion" />
-                  <YAxis />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                  <XAxis dataKey="emotion" stroke={CHART_AXIS_COLOR} />
+                  <YAxis stroke={CHART_AXIS_COLOR} />
                   <Tooltip />
-                  <Bar dataKey="count" fill="#0ea5e9" />
+                  <Bar dataKey="count">
+                    {textBarData.map((entry, index) => (
+                      <Cell key={`text-bar-${entry.emotion}-${index}`} fill={getChartColor(entry.emotion, index)} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
               <ResponsiveContainer width="100%" height={190}>
                 <PieChart>
                   <Pie data={textPieData} dataKey="value" nameKey="label" outerRadius={70} label />
-                  {textPieData.map((_, index) => (
-                    <Cell key={`text-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  {textPieData.map((entry, index) => (
+                    <Cell key={`text-${index}`} fill={getChartColor(entry.label, index)} />
                   ))}
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                 </PieChart>
@@ -657,8 +660,8 @@ export default function TeacherDashboardPage() {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie data={voicePieData} dataKey="value" nameKey="label" outerRadius={80} label />
-                  {voicePieData.map((_, index) => (
-                    <Cell key={`voice-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  {voicePieData.map((entry, index) => (
+                    <Cell key={`voice-${index}`} fill={getChartColor(entry.label, index)} />
                   ))}
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                 </PieChart>
