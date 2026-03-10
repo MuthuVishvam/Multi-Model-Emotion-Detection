@@ -536,10 +536,11 @@ export default function TeacherDashboardPage() {
               <h3>Combined Emotions</h3>
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={overallPieData} dataKey="value" nameKey="label" outerRadius={85} label />
-                  {overallPieData.map((entry, index) => (
-                    <Cell key={`overall-${index}`} fill={getChartColor(entry.label, index)} />
-                  ))}
+                  <Pie data={overallPieData} dataKey="value" nameKey="label" outerRadius={85} label>
+                    {overallPieData.map((entry, index) => (
+                      <Cell key={`overall-${index}`} fill={getChartColor(entry.label, index)} />
+                    ))}
+                  </Pie>
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                   <Legend />
                 </PieChart>
@@ -574,10 +575,11 @@ export default function TeacherDashboardPage() {
               <h3>Lesson Completion</h3>
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
-                  <Pie data={completionPieData} dataKey="value" nameKey="label" outerRadius={60} label />
-                  {completionPieData.map((entry, index) => (
-                    <Cell key={`completion-${index}`} fill={getChartColor(entry.label, index)} />
-                  ))}
+                  <Pie data={completionPieData} dataKey="value" nameKey="label" outerRadius={60} label>
+                    {completionPieData.map((entry, index) => (
+                      <Cell key={`completion-${index}`} fill={getChartColor(entry.label, index)} />
+                    ))}
+                  </Pie>
                   <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
@@ -595,10 +597,11 @@ export default function TeacherDashboardPage() {
               <h3>Face</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={facePieData} dataKey="value" nameKey="label" outerRadius={75} label />
-                  {facePieData.map((entry, index) => (
-                    <Cell key={`face-${index}`} fill={getChartColor(entry.label, index)} />
-                  ))}
+                  <Pie data={facePieData} dataKey="value" nameKey="label" outerRadius={75} label>
+                    {facePieData.map((entry, index) => (
+                      <Cell key={`face-${index}`} fill={getChartColor(entry.label, index)} />
+                    ))}
+                  </Pie>
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                 </PieChart>
               </ResponsiveContainer>
@@ -634,10 +637,11 @@ export default function TeacherDashboardPage() {
               </ResponsiveContainer>
               <ResponsiveContainer width="100%" height={190}>
                 <PieChart>
-                  <Pie data={textPieData} dataKey="value" nameKey="label" outerRadius={70} label />
-                  {textPieData.map((entry, index) => (
-                    <Cell key={`text-${index}`} fill={getChartColor(entry.label, index)} />
-                  ))}
+                  <Pie data={textPieData} dataKey="value" nameKey="label" outerRadius={70} label>
+                    {textPieData.map((entry, index) => (
+                      <Cell key={`text-${index}`} fill={getChartColor(entry.label, index)} />
+                    ))}
+                  </Pie>
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                 </PieChart>
               </ResponsiveContainer>
@@ -659,10 +663,11 @@ export default function TeacherDashboardPage() {
               <h3>Voice</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={voicePieData} dataKey="value" nameKey="label" outerRadius={80} label />
-                  {voicePieData.map((entry, index) => (
-                    <Cell key={`voice-${index}`} fill={getChartColor(entry.label, index)} />
-                  ))}
+                  <Pie data={voicePieData} dataKey="value" nameKey="label" outerRadius={80} label>
+                    {voicePieData.map((entry, index) => (
+                      <Cell key={`voice-${index}`} fill={getChartColor(entry.label, index)} />
+                    ))}
+                  </Pie>
                   <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                 </PieChart>
               </ResponsiveContainer>
