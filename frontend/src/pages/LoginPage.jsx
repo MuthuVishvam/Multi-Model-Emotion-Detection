@@ -3,12 +3,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
 import { getGoogleAuthUrl } from "../api/authApi";
+import { GoogleLogin } from "@react-oauth/google";
 import AuthLayout from "../components/AuthLayout";
-import OAuthButton from "../components/OAuthButton";
 import useAuth from "../hooks/useAuth";
 
 const INPUT_CLASS =
-  "mt-1.5 w-full rounded-xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:bg-white";
+  "mt-1.5 w-full rounded-xl border border-slate-700/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-200 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
 function Spinner() {
   return (
@@ -44,31 +44,34 @@ export default function LoginPage() {
     }
   }
 
-  async function handleGoogleSignIn() {
+  const handleGoogleSuccess = async (credentialResponse) => {
     setErrorText("");
-
     try {
-      const response = await fetch(getGoogleAuthUrl(), {
-        method: "GET",
-        credentials: "include",
+      // Pass the credential (JWT) to backend for verification
+      const res = await fetch("/api/auth/google/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token: credentialResponse.credential })
       });
-
-      if (response.redirected) {
-        window.location.assign(response.url);
-        return;
-      }
-
-      const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.url) {
-        window.location.assign(payload.url);
-        return;
-      }
-
-      throw new Error("Google sign-in is not configured yet.");
+      
+      if (!res.ok) throw new Error("Google authentication failed");
+      
+      const data = await res.json();
+      // Handle the login success (e.g. storing token, setUser)
+      // Since `login` is exposed by useAuth, we might need a custom googleLogin there, 
+      // but for now we'll simulate setting the user directly or relying on token storage.
+      localStorage.setItem("token", data.access_token);
+      window.location.href = "/dashboard";
     } catch (error) {
-      setErrorText(error.message || "Google sign-in is not configured yet.");
+      setErrorText(error.message || "Google sign-in failed.");
     }
-  }
+  };
+
+  const handleGoogleError = () => {
+    setErrorText("Google sign-in was unsuccessful.");
+  };
 
   const heroFeatures = [
     "AI-powered student engagement tracking",
@@ -87,19 +90,29 @@ export default function LoginPage() {
       heroFeatures={heroFeatures}
     >
       <div className="mb-8 text-center sm:text-left">
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back</h2>
-        <p className="text-slate-500">Sign in to continue your personalized learning journey.</p>
+        <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
+        <p className="text-slate-400">Sign in to continue your personalized learning journey.</p>
       </div>
 
       <div className="space-y-5">
-        <OAuthButton onClick={handleGoogleSignIn} disabled={isLoading} />
+        <div className="flex justify-center w-full">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            theme="filled_black"
+            size="large"
+            text="signin_with"
+            shape="pill"
+            width="100%"
+          />
+        </div>
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center" aria-hidden="true">
-            <div className="w-full border-t border-slate-200" />
+            <div className="w-full border-t border-slate-700/50" />
           </div>
           <div className="relative flex justify-center">
-            <span className="bg-white/80 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 backdrop-blur-sm rounded-full">
+            <span className="bg-slate-900/60 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 backdrop-blur-sm rounded-full">
               Or continue with email
             </span>
           </div>

@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, GraduationCap, Presentation } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
 
 import AuthLayout from "../components/AuthLayout";
 import useAuth from "../hooks/useAuth";
 
 const INPUT_CLASS =
-  "w-full rounded-xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:bg-white";
+  "w-full rounded-xl border border-slate-700/50 bg-slate-900/50 px-4 py-3 text-sm text-slate-200 outline-none transition placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20";
 
-const ERROR_INPUT_CLASS = "border-red-300 bg-red-50/50 focus:border-red-500 focus:ring-red-500/10";
+const ERROR_INPUT_CLASS = "border-red-500/50 bg-red-950/20 focus:border-red-500 focus:ring-red-500/10";
 
 const ROLE_OPTIONS = [
   {
@@ -132,6 +133,35 @@ export default function RegisterPage() {
     }
   }
 
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setErrorText("");
+    try {
+      const res = await fetch("/api/auth/google/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ 
+          token: credentialResponse.credential,
+          // When registering via Google, pass the selected role
+          role: selectedRole.apiRole
+        })
+      });
+      
+      if (!res.ok) throw new Error("Google registration failed");
+      
+      const data = await res.json();
+      localStorage.setItem("token", data.access_token);
+      window.location.href = "/dashboard";
+    } catch (error) {
+      setErrorText(error.message || "Google sign-up failed.");
+    }
+  };
+
+  const handleGoogleError = () => {
+    setErrorText("Google sign-up was unsuccessful.");
+  };
+
   const heroFeatures = [
     "Role-based access for students and teachers",
     "Emotion-aware learning analytics",
@@ -149,14 +179,39 @@ export default function RegisterPage() {
       heroFeatures={heroFeatures}
     >
       <div className="mb-6 text-center sm:text-left">
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Create Account</h2>
-        <p className="text-slate-500">Get started with your AI-powered learning platform.</p>
+        <h2 className="text-2xl font-bold text-white mb-2">Create Account</h2>
+        <p className="text-slate-400">Get started with your AI-powered learning platform.</p>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex justify-center w-full">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            theme="filled_black"
+            size="large"
+            text="signup_with"
+            shape="pill"
+            width="100%"
+          />
+        </div>
+
+        <div className="relative mt-6 mb-4">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-slate-700/50" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-slate-900/60 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 backdrop-blur-sm rounded-full">
+              Or register with email
+            </span>
+          </div>
+        </div>
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="register-first-name" className="block text-sm font-semibold text-slate-700 mb-1.5">
+            <label htmlFor="register-first-name" className="block text-sm font-semibold text-slate-300 mb-1.5">
               First Name
             </label>
             <input
@@ -168,12 +223,12 @@ export default function RegisterPage() {
               aria-invalid={Boolean(fieldErrors.firstName)}
             />
             {fieldErrors.firstName && (
-              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.firstName}</p>
+              <p className="mt-1.5 text-xs text-red-400 font-medium">{fieldErrors.firstName}</p>
             )}
           </div>
 
           <div>
-            <label htmlFor="register-last-name" className="block text-sm font-semibold text-slate-700 mb-1.5">
+            <label htmlFor="register-last-name" className="block text-sm font-semibold text-slate-300 mb-1.5">
               Last Name
             </label>
             <input
@@ -185,13 +240,13 @@ export default function RegisterPage() {
               aria-invalid={Boolean(fieldErrors.lastName)}
             />
             {fieldErrors.lastName && (
-              <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.lastName}</p>
+              <p className="mt-1.5 text-xs text-red-400 font-medium">{fieldErrors.lastName}</p>
             )}
           </div>
         </div>
 
         <div>
-          <label htmlFor="register-email" className="block text-sm font-semibold text-slate-700 mb-1.5">
+          <label htmlFor="register-email" className="block text-sm font-semibold text-slate-300 mb-1.5">
             Email Address
           </label>
           <input
@@ -205,12 +260,12 @@ export default function RegisterPage() {
             aria-invalid={Boolean(fieldErrors.email)}
           />
           {fieldErrors.email && (
-            <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.email}</p>
+            <p className="mt-1.5 text-xs text-red-400 font-medium">{fieldErrors.email}</p>
           )}
         </div>
 
         <div>
-          <label htmlFor="register-password" className="block text-sm font-semibold text-slate-700 mb-1.5">
+          <label htmlFor="register-password" className="block text-sm font-semibold text-slate-300 mb-1.5">
             Password
           </label>
           <div className="relative">
@@ -227,18 +282,18 @@ export default function RegisterPage() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
           {fieldErrors.password && (
-            <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.password}</p>
+            <p className="mt-1.5 text-xs text-red-400 font-medium">{fieldErrors.password}</p>
           )}
         </div>
 
         <div>
-          <label htmlFor="register-confirm-password" className="block text-sm font-semibold text-slate-700 mb-1.5">
+          <label htmlFor="register-confirm-password" className="block text-sm font-semibold text-slate-300 mb-1.5">
             Confirm Password
           </label>
           <div className="relative">
@@ -255,18 +310,18 @@ export default function RegisterPage() {
             <button
               type="button"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
             >
               {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
           {fieldErrors.confirmPassword && (
-            <p className="mt-1.5 text-xs text-red-600 font-medium">{fieldErrors.confirmPassword}</p>
+            <p className="mt-1.5 text-xs text-red-400 font-medium">{fieldErrors.confirmPassword}</p>
           )}
         </div>
 
         <div>
-          <span className="block text-sm font-semibold text-slate-700 mb-2">Select Role</span>
+          <span className="block text-sm font-semibold text-slate-300 mb-2">Select Role</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {ROLE_OPTIONS.map((option) => {
               const isActive = option.id === formValues.role;
@@ -277,20 +332,20 @@ export default function RegisterPage() {
                   type="button"
                   onClick={() => setFieldValue("role", option.id)}
                   aria-pressed={isActive}
-                  className={`relative flex flex-col items-start gap-3 overflow-hidden rounded-xl border p-4 text-left transition-all duration-200 ${
+                  className={`relative flex flex-col items-start gap-3 overflow-hidden rounded-xl border p-4 text-left transition-all duration-300 ${
                     isActive
-                      ? "border-blue-500 bg-blue-50/50 shadow-[0_0_0_1px_rgba(59,130,246,1)] ring-4 ring-blue-500/10"
-                      : "border-slate-200 bg-white/50 hover:border-blue-300 hover:bg-slate-50"
+                      ? "border-brand-500 bg-brand-500/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] ring-2 ring-brand-500/20"
+                      : "border-slate-700/50 bg-slate-800/40 hover:border-brand-500/50 hover:bg-slate-800/80"
                   }`}
                 >
-                  <div className={`p-2 rounded-lg ${isActive ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
+                  <div className={`p-2 rounded-lg ${isActive ? "bg-brand-500/20 text-brand-400" : "bg-slate-800 text-slate-400"}`}>
                     <Icon className="w-5 h-5" />
                   </div>
                   <div>
-                    <span className={`block text-sm font-bold ${isActive ? "text-blue-700" : "text-slate-700"}`}>
+                    <span className={`block text-sm font-bold ${isActive ? "text-brand-300" : "text-slate-300"}`}>
                       {option.label}
                     </span>
-                    <span className={`mt-1 block text-xs leading-relaxed ${isActive ? "text-blue-600/80" : "text-slate-500"}`}>
+                    <span className={`mt-1 block text-xs leading-relaxed ${isActive ? "text-brand-400/70" : "text-slate-500"}`}>
                       {option.hint}
                     </span>
                   </div>
@@ -307,7 +362,7 @@ export default function RegisterPage() {
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               role="alert"
-              className="rounded-xl border border-red-200 bg-red-50/80 backdrop-blur-sm px-4 py-3 text-sm text-red-600"
+              className="rounded-xl border border-red-500/50 bg-red-950/40 backdrop-blur-sm px-4 py-3 text-sm text-red-400"
             >
               {errorText}
             </motion.p>
@@ -317,15 +372,15 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={isLoading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-all hover:shadow-blue-500/40 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? <Spinner /> : null}
           <span>{isLoading ? "Creating Account..." : "Create Account"}</span>
         </button>
 
-        <p className="text-center text-sm text-slate-500 pt-4">
+        <p className="text-center text-sm text-slate-400 pt-4">
           Already have an account?{" "}
-          <Link to="/login" className="font-semibold text-blue-600 hover:text-indigo-600 transition-colors">
+          <Link to="/login" className="font-semibold text-brand-400 hover:text-brand-300 transition-colors">
             Sign In
           </Link>
         </p>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import io from "socket.io-client";
 
 import AudioFeedbackRecorder from "../components/AudioFeedbackRecorder";
 import {
@@ -9,11 +10,25 @@ import {
   joinLiveClass,
   leaveLiveClass,
 } from "../services/api";
+import { buildLiveRoomId, getRealtimeBaseUrl, getUserDisplayName } from "../services/realtime";
 import useAttentionTracker from "../hooks/useAttentionTracker";
 import useEmotionTracker from "../hooks/useEmotionTracker";
 
 function safeUserId(user) {
   return user?.id || user?.email || "";
+}
+
+function normalizeChatMessage(payload = {}) {
+  return {
+    id: String(payload.message_id || `${payload.user_id || "user"}-${payload.timestamp || Date.now()}`),
+    text: String(payload.text || ""),
+    username: String(payload.username || "Participant"),
+    role: String(payload.role || "student"),
+    timestamp: payload.timestamp || new Date().toISOString(),
+    emotion: String(payload.emotion || "").trim(),
+    confidence: Number(payload.confidence || 0),
+    source: String(payload.source || "chat"),
+  };
 }
 
 export default function LiveClassRoom({ user }) {
@@ -24,22 +39,34 @@ export default function LiveClassRoom({ user }) {
   const [liveSessionId, setLiveSessionId] = useState("");
   const [liveClass, setLiveClass] = useState(null);
   const [overall, setOverall] = useState(null);
+  
   const [chatText, setChatText] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
   const [message, setMessage] = useState("");
+  
   const [isJoining, setIsJoining] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [isSendingChat, setIsSendingChat] = useState(false);
-  const [isLoadingOverall, setIsLoadingOverall] = useState(false);
   const [liveWatchSeconds, setLiveWatchSeconds] = useState(0);
   const [isLiveStarted, setIsLiveStarted] = useState(false);
+  const [showChatPane, setShowChatPane] = useState(false);
+  const [socketState, setSocketState] = useState("connecting");
+  const [teacherStreaming, setTeacherStreaming] = useState(false);
+  
   const leaveInCleanupRef = useRef(false);
   const manualFaceInputRef = useRef(null);
-
+  
+  const socketRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  
   const isJoined = Boolean(liveSessionId);
   const userId = safeUserId(user);
   const lessonId = (liveClass?.lesson_id || (liveSessionId ? `live:${liveSessionId}` : "")).trim();
   const classId = (liveClass?.class_id || "").trim();
+  const roomId = useMemo(() => buildLiveRoomId(liveSessionId), [liveSessionId]);
+  const socketUrl = useMemo(() => getRealtimeBaseUrl(), []);
+  const userDisplayName = useMemo(() => getUserDisplayName(user), [user]);
 
   const emotionTracker = useEmotionTracker({
     userId,
@@ -63,10 +90,7 @@ export default function LiveClassRoom({ user }) {
   const attentionTracker = useAttentionTracker("", lessonId, attentionStats, { liveSessionId });
 
   async function refreshLiveContext(nextSessionId = liveSessionId) {
-    if (!nextSessionId) {
-      return;
-    }
-    setIsLoadingOverall(true);
+    if (!nextSessionId) return;
     try {
       const [liveMeta, overallData] = await Promise.all([
         fetchLiveClass(nextSessionId),
@@ -74,12 +98,59 @@ export default function LiveClassRoom({ user }) {
       ]);
       setLiveClass(liveMeta || null);
       setOverall(overallData || null);
-      setMessage("");
     } catch (error) {
-      setMessage(error.message || "Unable to refresh live class status.");
-    } finally {
-      setIsLoadingOverall(false);
+      console.error(error);
     }
+  }
+
+  function closePeerConnection() {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+  }
+
+  async function handleOffer({ from, offer }) {
+    closePeerConnection();
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ],
+    });
+    peerConnectionRef.current = peerConnection;
+
+    peerConnection.ontrack = (event) => {
+      if (remoteVideoRef.current && event.streams && event.streams[0]) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current) {
+        socketRef.current.emit("webrtc_ice_candidate", {
+          target: from,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    socketRef.current?.emit("webrtc_answer", {
+      target: from,
+      answer,
+    });
+  }
+
+  async function handleIceCandidate({ candidate }) {
+    if (!peerConnectionRef.current || !candidate) return;
+    await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
   }
 
   async function handleJoin() {
@@ -104,22 +175,24 @@ export default function LiveClassRoom({ user }) {
   }
 
   async function handleLeave({ silent = false } = {}) {
-    if (!liveSessionId) {
-      return;
-    }
-    if (!silent) {
-      setIsLeaving(true);
-    }
+    if (!liveSessionId) return;
+    if (!silent) setIsLeaving(true);
     try {
       await leaveLiveClass(liveSessionId);
     } catch {
-      // Ignore leave race errors during unmount.
+      // ignore
     } finally {
+      closePeerConnection();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
       setLiveSessionId("");
       setLiveClass(null);
       setOverall(null);
       setIsLiveStarted(false);
       setLiveWatchSeconds(0);
+      setTeacherStreaming(false);
       emotionTracker.stopTracking({ flush: true });
       if (!silent) {
         setIsLeaving(false);
@@ -137,13 +210,12 @@ export default function LiveClassRoom({ user }) {
   }
 
   async function handleSendChat() {
-    if (!liveSessionId) {
-      setMessage("Join a live class first.");
-      return;
-    }
+    if (!liveSessionId) return;
     const trimmed = String(chatText || "").trim();
-    if (!trimmed) {
-      setMessage("Type a chat message first.");
+    if (!trimmed) return;
+
+    if (!socketRef.current?.connected) {
+      setMessage("Meeting chat is offline.");
       return;
     }
 
@@ -165,71 +237,113 @@ export default function LiveClassRoom({ user }) {
         },
         token
       );
-      setChatMessages((current) => [
-        {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          text: trimmed,
-          emotion: response?.emotion || "unknown",
-          confidence: Number(response?.confidence || 0),
-          timestamp,
-          source: "text",
-        },
-        ...current,
-      ]);
+      
+      const payload = {
+        room_id: roomId,
+        live_session_id: liveSessionId,
+        text: trimmed,
+        timestamp,
+        source: "chat",
+        emotion: response?.emotion || "unknown",
+        confidence: response?.confidence || 0,
+      };
+
+      socketRef.current.emit("meeting_chat", payload);
       setChatText("");
-      setMessage(`Chat tagged as ${response?.emotion || "unknown"}.`);
     } catch (error) {
-      setMessage(error.message || "Unable to send chat.");
+      setMessage("Unable to send chat.");
     } finally {
       setIsSendingChat(false);
     }
   }
 
   function handleVoicePrediction(prediction) {
-    setChatMessages((current) => [
-      {
-        id: `voice-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        text: "[Voice feedback recording]",
-        emotion: prediction?.emotion || "unknown",
-        confidence: Number(prediction?.confidence || 0),
-        timestamp: prediction?.timestamp || new Date().toISOString(),
-        source: "voice",
-      },
-      ...current,
-    ]);
-  }
-
-  async function handleManualFaceUpload(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-    await emotionTracker.captureFaceFromImage(file);
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit("meeting_chat", {
+      room_id: roomId,
+      live_session_id: liveSessionId,
+      text: "[Voice feedback recording]",
+      timestamp: prediction?.timestamp || new Date().toISOString(),
+      source: "voice",
+      emotion: prediction?.emotion || "unknown",
+      confidence: prediction?.confidence || 0,
+    });
   }
 
   useEffect(() => {
-    if (!isJoined || !isLiveStarted) {
-      return undefined;
-    }
+    if (!isJoined || !isLiveStarted) return;
     const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        setLiveWatchSeconds((current) => current + 1);
-      }
+      if (!document.hidden) setLiveWatchSeconds(c => c + 1);
     }, 1000);
     return () => window.clearInterval(timer);
   }, [isJoined, isLiveStarted]);
 
   useEffect(() => {
-    if (!isJoined) {
-      return undefined;
-    }
+    if (!isJoined) return;
     void refreshLiveContext(liveSessionId);
     const timer = window.setInterval(() => {
       void refreshLiveContext(liveSessionId);
     }, 10000);
     return () => window.clearInterval(timer);
   }, [isJoined, liveSessionId]);
+
+  useEffect(() => {
+    if (!isJoined) return;
+    
+    const socket = io(socketUrl, { transports: ["websocket"] });
+    socketRef.current = socket;
+    setSocketState("connecting");
+
+    socket.on("connect", () => {
+      setSocketState("connected");
+      socket.emit("join_room", {
+        room_id: roomId,
+        live_session_id: liveSessionId,
+        user_id: user.id,
+        role: "student",
+        username: userDisplayName,
+      });
+    });
+
+    socket.on("disconnect", () => setSocketState("disconnected"));
+    socket.on("connect_error", () => setSocketState("error"));
+
+    socket.on("room_participants", (payload) => {
+      if (payload?.teacher_streaming) setTeacherStreaming(true);
+    });
+
+    socket.on("teacher_started_streaming", () => {
+      setTeacherStreaming(true);
+    });
+
+    socket.on("teacher_stopped_streaming", () => {
+      setTeacherStreaming(false);
+      closePeerConnection();
+    });
+
+    socket.on("webrtc_offer", (payload) => {
+      void handleOffer(payload);
+    });
+
+    socket.on("webrtc_ice_candidate", (payload) => {
+      void handleIceCandidate(payload);
+    });
+
+    socket.on("meeting_chat", (payload) => {
+      setChatMessages((current) => [normalizeChatMessage(payload), ...current].slice(0, 100));
+    });
+
+    socket.on("live_class_ended", () => {
+      setMessage("The teacher has ended this live class.");
+      handleLeave({ silent: false });
+    });
+
+    return () => {
+      closePeerConnection();
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [isJoined, liveSessionId, roomId, socketUrl, user?.id, userDisplayName]);
 
   useEffect(() => {
     leaveInCleanupRef.current = isJoined;
@@ -241,225 +355,255 @@ export default function LiveClassRoom({ user }) {
     }
   }, [liveSessionId]);
 
-  return (
-    <div className="max-w-7xl mx-auto space-y-6 py-6 px-4">
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-cyan-400"></div>
-        <p className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold tracking-wider mb-4 border border-indigo-100 uppercase">Student Live Class</p>
-        <h2 className="text-3xl font-extrabold text-slate-900 mb-3">Live Class Room</h2>
-        <p className="text-slate-500 max-w-2xl mx-auto">
-          Join with session ID, enable camera tracking, and send live text/voice feedback. Camera and live microphone
-          prompts work on HTTPS or localhost. On plain HTTP, use the selfie/audio upload fallbacks below.
-        </p>
-
-        <div className="flex flex-col sm:flex-row max-w-md mx-auto gap-3 mt-8">
-          <input
-            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-            placeholder="Enter live session ID"
-            value={inputSessionId}
-            onChange={(event) => setInputSessionId(event.target.value)}
-            disabled={isJoined || isJoining}
-          />
-          {!isJoined ? (
+  if (!isJoined) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-4">
+        <div className="glass-panel max-w-lg w-full p-8 rounded-2xl text-center">
+          <div className="w-16 h-16 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-brand-500/20">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h2 className="text-3xl font-bold text-slate-100 mb-2">Join Live Class</h2>
+          <p className="text-slate-400 mb-8">Enter your session ID below to join the interactive live classroom.</p>
+          
+          <div className="flex flex-col gap-4">
+            <input
+              className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all text-white placeholder-slate-500 text-center text-lg tracking-widest"
+              placeholder="SESSION ID"
+              value={inputSessionId}
+              onChange={(e) => setInputSessionId(e.target.value.toUpperCase())}
+              disabled={isJoining}
+            />
             <button 
               type="button" 
-              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-colors disabled:opacity-50 whitespace-nowrap"
+              className="w-full px-6 py-3.5 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl shadow-lg shadow-brand-600/20 transition-all disabled:opacity-50"
               onClick={handleJoin} 
               disabled={isJoining || !inputSessionId.trim()}
             >
-              {isJoining ? "Joining..." : "Join Live Class"}
+              {isJoining ? "Joining..." : "Join Classroom"}
             </button>
-          ) : (
-            <button 
-              type="button" 
-              className="px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold border border-red-200 rounded-xl transition-colors disabled:opacity-50 whitespace-nowrap"
-              onClick={() => void handleLeave()} 
-              disabled={isLeaving}
-            >
-              {isLeaving ? "Leaving..." : "Leave Class"}
-            </button>
-          )}
+          </div>
+          {message && <div className="mt-4 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg p-3">{message}</div>}
         </div>
+      </div>
+    );
+  }
 
-        {message && <div className="mt-6 text-sm text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-100 inline-block">{message}</div>}
-      </section>
-
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <article className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Active students</span>
-          <strong className="text-3xl font-black text-slate-900">{Number(overall?.active_students_count || 0)}</strong>
-        </article>
-        <article className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Dominant emotion</span>
-          <strong className="text-2xl font-bold text-indigo-600 capitalize">{overall?.dominant_emotion || "unknown"}</strong>
-        </article>
-        <article className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Low-attention alerts</span>
-          <strong className="text-3xl font-black text-amber-500">{Number(overall?.low_attention_alerts || 0)}</strong>
-        </article>
-        <article className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Attention state</span>
-          <strong className="text-2xl font-bold text-emerald-600 capitalize">{attentionTracker.lastState}</strong>
-        </article>
-      </section>
-
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <article className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 lg:p-8">
-          <h3 className="text-xl font-bold text-slate-900 mb-6">Live Tracking Controls</h3>
-          <div className="flex flex-wrap gap-2 mb-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
-            <span className={`px-3 py-1 text-xs font-bold rounded-full ${emotionTracker.cameraState === "on" ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-600"}`}>
-              Camera: {emotionTracker.cameraState === "on" ? "On" : "Off"}
-            </span>
-            <span className={`px-3 py-1 text-xs font-bold rounded-full ${emotionTracker.faceDetectionState === "running" ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-600"}`}>
-              Face: {emotionTracker.faceDetectionState === "running" ? "Detected" : "Not detected"}
-            </span>
-            <span className={`px-3 py-1 text-xs font-bold rounded-full ${attentionTracker.trackingOn ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-600"}`}>
-              Attention stream: {attentionTracker.trackingOn ? "On" : "Off"}
-            </span>
+  return (
+    <div className="fixed inset-0 top-[72px] lg:left-64 z-40 bg-slate-950 flex flex-col overflow-hidden">
+      {/* Top Banner */}
+      <div className="h-14 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-sm font-bold text-slate-200">LIVE</span>
           </div>
-
-          <div className="flex flex-wrap gap-3 mb-6">
-            <button 
-              type="button" 
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-50"
-              onClick={handleStartLive} 
-              disabled={!isJoined || isLiveStarted}
-            >
-              {isLiveStarted ? "Live Running" : "Start Live Tracking"}
-            </button>
-            <button
-              type="button"
-              className={`px-5 py-2.5 text-sm font-semibold rounded-xl border transition-colors disabled:opacity-50 ${emotionTracker.trackingEnabled ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
-              onClick={emotionTracker.toggleTracking}
-              disabled={!isJoined}
-            >
-              {emotionTracker.trackingEnabled ? "Stop Camera Tracking" : "Enable Camera Tracking"}
-            </button>
-            <button
-              type="button"
-              className="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
-              onClick={() => void emotionTracker.requestCameraPermission()}
-              disabled={!isJoined || emotionTracker.isRequestingCamera}
-            >
-              {emotionTracker.isRequestingCamera ? "Checking..." : "Allow Camera"}
-            </button>
-            <button
-              type="button"
-              className="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
-              onClick={() => manualFaceInputRef.current?.click()}
-              disabled={!isJoined || emotionTracker.isAnalyzingFaceImage}
-            >
-              {emotionTracker.isAnalyzingFaceImage ? "Analyzing..." : "Upload Selfie"}
-            </button>
-            <label className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 font-medium cursor-pointer hover:bg-slate-50 rounded-lg">
-              <input
-                type="checkbox"
-                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                checked={emotionTracker.showCameraPreview}
-                onChange={(event) => emotionTracker.setShowCameraPreview(event.target.checked)}
-              />
-              Show preview
-            </label>
+          <div className="h-4 w-px bg-slate-700" />
+          <h2 className="text-sm font-semibold text-slate-300">{liveClass?.title || `Session: ${liveSessionId}`}</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className={`px-3 py-1 rounded-full text-xs font-bold ${socketState === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+            {socketState === 'connected' ? 'Connected' : 'Reconnecting...'}
           </div>
+        </div>
+      </div>
 
-          {emotionTracker.cameraSupportIssue && (
-            <div className="bg-amber-50 text-amber-800 p-4 rounded-xl border border-amber-200 text-sm mb-6">
-              {emotionTracker.cameraSupportIssue} Open the app over HTTPS for live camera tracking, or use Upload Selfie.
-            </div>
-          )}
-
-          <div className="aspect-video w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 relative flex items-center justify-center mb-6 shadow-inner">
-            <video
-              className={`w-full h-full object-cover ${emotionTracker.showCameraPreview ? "opacity-100" : "opacity-0 absolute inset-0 -z-10"}`}
-              ref={emotionTracker.webcamRef}
-              autoPlay
-              muted
-              playsInline
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden relative">
+        
+        {/* Video Grid Area */}
+        <div className="flex-1 flex flex-col p-4 relative z-0">
+          <div className="flex-1 bg-black rounded-2xl overflow-hidden relative shadow-2xl border border-slate-800 flex items-center justify-center">
+            
+            <video 
+              ref={remoteVideoRef} 
+              autoPlay 
+              playsInline 
+              className={`w-full h-full object-contain ${teacherStreaming ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
             />
-            {!emotionTracker.showCameraPreview && (
-              <div className="text-slate-400 font-medium text-sm z-10 flex flex-col items-center">
-                <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
-                  <span className="text-xl">📷</span>
+            
+            {!teacherStreaming && (
+              <div className="flex flex-col items-center justify-center">
+                <div className="w-24 h-24 rounded-full bg-slate-800 flex items-center justify-center mb-4 border border-slate-700">
+                  <span className="text-4xl">👨‍🏫</span>
                 </div>
-                Camera preview hidden while tracking remains active.
+                <h3 className="text-xl font-bold text-slate-300 mb-2">Teacher is not broadcasting</h3>
+                <p className="text-slate-500">Wait for the teacher to start their video stream.</p>
+              </div>
+            )}
+
+            {/* Student Local Picture-in-Picture */}
+            <div className="absolute bottom-4 right-4 w-48 aspect-video bg-slate-900 rounded-xl overflow-hidden border-2 border-slate-700 shadow-2xl">
+              <video 
+                ref={emotionTracker.webcamRef} 
+                autoPlay 
+                muted 
+                playsInline 
+                className={`w-full h-full object-cover ${emotionTracker.cameraState === "on" ? "opacity-100" : "opacity-0"}`}
+              />
+              {emotionTracker.cameraState !== "on" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+                  <span className="text-2xl">👤</span>
+                </div>
+              )}
+              {emotionTracker.lastEmotion && (
+                <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 backdrop-blur-md rounded-md text-[10px] font-bold text-white uppercase tracking-wider">
+                  {emotionTracker.lastEmotion} {Math.round(emotionTracker.lastConfidence * 100)}%
+                </div>
+              )}
+            </div>
+            
+            {/* Start Tracking Overlay */}
+            {!isLiveStarted && (
+              <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-10">
+                <div className="glass-panel p-8 rounded-2xl text-center max-w-md">
+                  <h3 className="text-2xl font-bold text-white mb-4">Join active session</h3>
+                  <p className="text-slate-300 mb-6 text-sm">Join the interactive layer to track attention, capture emotions, and engage with the class.</p>
+                  <button 
+                    onClick={handleStartLive}
+                    className="w-full px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105"
+                  >
+                    Enter Live Class
+                  </button>
+                </div>
               </div>
             )}
           </div>
-          <input
-            ref={manualFaceInputRef}
-            type="file"
-            accept="image/*"
-            capture="user"
-            className="hidden"
-            onChange={(event) => {
-              void handleManualFaceUpload(event);
-            }}
-          />
+        </div>
 
-          <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <span>Buffered: <span className="text-slate-900">{emotionTracker.queueSize}</span></span>
-            <span>Sent: <span className="text-slate-900">{emotionTracker.faceEventsSent}</span></span>
-            <span>Watch time: <span className="text-slate-900">{liveWatchSeconds}s</span></span>
+        {/* Chat / Sidebar Area */}
+        <div className={`w-80 border-l border-slate-800 bg-slate-900 flex flex-col shrink-0 transition-transform duration-300 ${showChatPane ? 'translate-x-0' : 'translate-x-full absolute right-0 top-0 bottom-0 z-20'}`}>
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-200">Live Chat</h3>
+            <button onClick={() => setShowChatPane(false)} className="text-slate-400 hover:text-white lg:hidden">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
           
-          {emotionTracker.flushError && <p className="mt-3 text-xs text-red-600 font-medium">Face batch retry: {emotionTracker.flushError}</p>}
-          {attentionTracker.lastFlushError && <p className="mt-1 text-xs text-red-600 font-medium">Attention batch retry: {attentionTracker.lastFlushError}</p>}
-          {isLoadingOverall && <p className="mt-3 text-xs text-indigo-500 font-medium animate-pulse">Refreshing live analytics...</p>}
-        </article>
-
-        <article className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 lg:p-8 flex flex-col h-full lg:max-h-[850px]">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">Live Chat Feedback</h3>
-          <div className="flex flex-col gap-3 flex-shrink-0 mb-6">
-            <textarea
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm resize-none h-24"
-              placeholder="Type your live feedback..."
-              value={chatText}
-              onChange={(event) => setChatText(event.target.value)}
-              disabled={!isJoined}
-            />
-            <button 
-              type="button" 
-              className="w-full px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors disabled:opacity-50"
-              onClick={handleSendChat} 
-              disabled={!isJoined || isSendingChat}
-            >
-              {isSendingChat ? "Sending..." : "Send Feedback"}
-            </button>
-            <div className="pt-2">
-              <AudioFeedbackRecorder
-                userId={userId}
-                courseId=""
-                classId={classId}
-                lessonId={lessonId}
-                sessionId=""
-                liveSessionId={liveSessionId}
-                onPrediction={handleVoicePrediction}
-                onStatusMessage={setMessage}
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-3 rounded-xl bg-slate-50 p-4 border border-slate-100">
-            {chatMessages.length === 0 && <p className="text-sm text-slate-400 font-medium text-center italic mt-4">No chat or voice entries yet.</p>}
-            {chatMessages.map((entry) => (
-              <article key={entry.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                <div className="flex justify-between items-start gap-2 mb-2">
-                  <p className="text-sm text-slate-800 font-medium">{entry.text}</p>
-                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider shrink-0 border ${entry.emotion === 'negative' ? 'bg-red-50 text-red-600 border-red-200' : entry.emotion === 'positive' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                    {entry.emotion} {(Number(entry.confidence || 0)*100).toFixed(0)}%
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+            {chatMessages.length === 0 && (
+              <div className="text-center text-slate-500 text-sm mt-8">No messages yet.</div>
+            )}
+            {chatMessages.map(msg => (
+              <div key={msg.id} className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+                <div className="flex justify-between items-start mb-1">
+                  <span className={`text-xs font-bold ${msg.role === 'teacher' ? 'text-brand-400' : 'text-slate-300'}`}>
+                    {msg.username}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-                  <span>{new Date(entry.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  <span className="flex items-center gap-1">
-                    {entry.source === 'voice' ? '🎤' : '💬'} {entry.source}
-                  </span>
-                </div>
-              </article>
+                <p className="text-sm text-slate-200">{msg.text}</p>
+                {(msg.emotion && msg.emotion !== 'unknown') && (
+                  <div className="mt-2 flex">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-900 border border-slate-700 text-slate-400">
+                      {msg.emotion}
+                    </span>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
-        </article>
-      </section>
+
+          <div className="p-4 border-t border-slate-800 bg-slate-900">
+            <textarea
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg focus:ring-1 focus:ring-brand-500/50 outline-none text-sm text-slate-200 resize-none h-16 mb-2 placeholder-slate-500"
+              placeholder="Type your message..."
+              value={chatText}
+              onChange={(e) => setChatText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendChat();
+                }
+              }}
+              disabled={!isLiveStarted}
+            />
+            <div className="flex gap-2">
+              <button 
+                onClick={handleSendChat}
+                disabled={!isLiveStarted || isSendingChat || !chatText.trim()}
+                className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-lg transition-colors"
+              >
+                Send
+              </button>
+              <div className="flex-1">
+                <AudioFeedbackRecorder
+                  userId={userId}
+                  courseId=""
+                  classId={classId}
+                  lessonId={lessonId}
+                  sessionId=""
+                  liveSessionId={liveSessionId}
+                  onPrediction={handleVoicePrediction}
+                  onStatusMessage={setMessage}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Control Bar */}
+      <div className="h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-between px-6 shrink-0 z-30">
+        <div className="w-64 flex flex-col justify-center">
+          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Emotion AI</span>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${emotionTracker.cameraState === "on" ? "bg-emerald-500" : "bg-red-500"}`} />
+            <span className="text-sm font-bold text-slate-200">
+              {emotionTracker.cameraState === "on" ? "Tracking Active" : "Camera Off"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <button 
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${emotionTracker.cameraState === "on" ? "bg-slate-800 text-slate-200 hover:bg-slate-700" : "bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/30"}`}
+            onClick={emotionTracker.toggleTracking}
+          >
+            {emotionTracker.cameraState === "on" ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
+
+          <button 
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${showChatPane ? "bg-brand-600 text-white" : "bg-slate-800 text-slate-200 hover:bg-slate-700"}`}
+            onClick={() => setShowChatPane(!showChatPane)}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+            </svg>
+          </button>
+
+          <button 
+            className="w-12 h-12 rounded-full flex items-center justify-center bg-red-500 hover:bg-red-600 text-white transition-all shadow-lg shadow-red-500/20 ml-4"
+            onClick={() => handleLeave()}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform rotate-135" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="w-64 flex justify-end">
+          {message && (
+            <div className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-full border border-slate-700 truncate max-w-full">
+              {message}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

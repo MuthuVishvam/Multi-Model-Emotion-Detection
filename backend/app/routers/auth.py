@@ -140,6 +140,78 @@ async def login(payload: UserLogin) -> TokenResponse:
     return TokenResponse(access_token=token)
 
 
+import httpx
+from pydantic import BaseModel
+
+class GoogleAuthRequest(BaseModel):
+    token: str
+    role: str | None = None
+
+@router.post("/google/verify", response_model=TokenResponse)
+async def google_verify(payload: GoogleAuthRequest) -> TokenResponse:
+    # Verify token with Google's tokeninfo endpoint
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.token}")
+    
+    if resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token")
+        
+    google_data = resp.json()
+    email = google_data.get("email")
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not provided by Google")
+        
+    # Check if user exists
+    user = await db.users.find_one({"email": email})
+    
+    if not user:
+        # User doesn't exist, create them
+        role = payload.role if payload.role in ["student", "teacher"] else "student"
+        is_teacher = role == "teacher"
+        now = datetime.now(timezone.utc)
+        
+        first_name = google_data.get("given_name", email.split("@")[0])
+        last_name = google_data.get("family_name", "")
+        username = await _generate_unique_username(email.split("@")[0])
+        
+        user_doc = {
+            "email": email,
+            "password_hash": "", # No password for Google users
+            "role": role,
+            "username": username,
+            "full_name": f"{first_name} {last_name}".strip(),
+            "phone": None,
+            "department": None,
+            "year": None,
+            "avatar_url": google_data.get("picture"),
+            "bio": None,
+            "designation": None,
+            "experience_years": None,
+            "verified": False if is_teacher else True,
+            "verified_at": None if is_teacher else now,
+            "status": "pending" if is_teacher else "approved",
+            "is_active": True,
+            "isActive": True,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db.users.insert_one(user_doc)
+        user = user_doc
+
+    if not _is_user_active(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled by admin")
+        
+    if user.get("role") == "teacher":
+        teacher_status = user.get("status", "pending")
+        teacher_verified = bool(user.get("verified", False))
+        if teacher_status == "rejected":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account rejected by admin")
+        if teacher_status != "approved" or not teacher_verified:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account pending admin approval")
+
+    token = create_access_token(data={"sub": email}, expires_delta=timedelta(hours=1))
+    return TokenResponse(access_token=token)
+
 @router.get("/me", response_model=UserMeResponse)
 async def me(current_user: dict = Depends(get_current_user)) -> UserMeResponse:
     return UserMeResponse(**_to_me_payload(current_user))

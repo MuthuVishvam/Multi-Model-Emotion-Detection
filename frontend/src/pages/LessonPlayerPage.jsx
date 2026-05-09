@@ -871,116 +871,34 @@ export default function LessonPlayerPage({ user }) {
   }
 
   return (
-    <div className="learning-page">
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm mb-6">
-        <div>
-          <p className="text-xs font-bold tracking-wider text-slate-500 uppercase mb-1">Lesson Player</p>
-          <h2 className="text-2xl font-bold text-slate-900 leading-tight">{course.title}</h2>
-          <p className="text-sm text-slate-500 mt-1">{selectedLesson?.title || "Select a lesson"}</p>
-        </div>
-        <div className="flex flex-wrap gap-3 items-center">
-          <TrackingIndicator tracker={emotionTracker} />
-          <div className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 border ${attentionTracker.trackingOn ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>
-            <span className={`w-2 h-2 rounded-full ${attentionTracker.trackingOn ? "bg-green-500 animate-pulse" : "bg-slate-400"}`} aria-hidden="true" />
-            <span>{attentionTracker.trackingOn ? "Tracking on" : "Tracking idle"}</span>
-          </div>
-          {classId ? (
-            <Link className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors" to={`/student/classes/${classId}/lessons`}>
-              Class Lessons
-            </Link>
-          ) : (
-            <Link className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors" to={`/student/courses/${course.id}`}>
-              Syllabus
-            </Link>
-          )}
-          <Link className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors" to="/student">
-            Catalog
-          </Link>
-        </div>
-      </div>
-
-      {courseLoadError && <div className="card inline-message">{courseLoadError}</div>}
+    <div className="learning-page p-0 md:p-4 w-full max-w-[1800px] mx-auto">
+      {courseLoadError && <div className="card inline-message mb-4">{courseLoadError}</div>}
 
       <div className="flex flex-col lg:flex-row gap-6">
-        <aside className="w-full lg:w-72 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-shrink-0 self-start sticky top-6">
-          <div className="p-5 border-b border-slate-100 bg-slate-50/50">
-            <p className="text-xs font-bold tracking-wider text-slate-500 uppercase mb-1">Course Sections</p>
-            <h3 className="text-base font-bold text-slate-900 leading-tight">{course.title}</h3>
-            <p className="text-sm text-slate-500 mt-1 line-clamp-2">{course.subtitle}</p>
-          </div>
-
-          <div className="overflow-y-auto max-h-[60vh] p-3 space-y-2">
-            {(course.modules || []).map((module) => (
-              <div key={module.id} className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
-                <button
-                  type="button"
-                  className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold transition-colors ${openModules[module.id] ? "bg-slate-50 text-blue-700" : "bg-white text-slate-700 hover:bg-slate-50"}`}
-                  onClick={() => toggleModule(module.id)}
-                >
-                  <span className="text-left">{module.title}</span>
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-xs">{module.items.length}</span>
-                </button>
-                {openModules[module.id] && (
-                  <ul className="flex flex-col divide-y divide-slate-50 border-t border-slate-50 bg-slate-50/30">
-                    {module.items.map((lesson) => {
-                      const isActive = String(selectedLesson?.lesson_id) === String(lesson.lesson_id);
-                      return (
-                        <li key={lesson.lesson_id}>
-                          <button
-                            type="button"
-                            className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${isActive ? "bg-blue-50 border-l-4 border-blue-600 text-blue-700" : "border-l-4 border-transparent text-slate-600 hover:bg-slate-100"}`}
-                            onClick={() => selectLesson(lesson.lesson_id)}
-                          >
-                            <span className={`text-sm ${isActive ? "font-bold" : "font-medium"}`}>{lesson.title}</span>
-                            <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{lesson.duration || "10 min"}</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        </aside>
-
-        <main className="flex-1 flex flex-col gap-6 min-w-0">
+        {/* Main Content Area (Player + Info + Discussion) */}
+        <main className="flex-1 flex flex-col min-w-0 w-full lg:w-2/3 xl:w-3/4">
+          
           {selectedLesson ? (
             <>
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <h3 className="text-xl font-bold text-slate-900 truncate">{selectedLesson.title}</h3>
-                  <p className="text-sm text-slate-500 mt-1 line-clamp-2">{selectedLesson.description}</p>
-                </div>
-                <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg shrink-0 border border-slate-200">{selectedLesson.duration || "10 min"}</span>
-              </div>
-
-              <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-lg border border-slate-800 relative">
+              {/* THEATER MODE PLAYER */}
+              <div className="w-full bg-black rounded-xl overflow-hidden shadow-2xl relative aspect-video flex items-center justify-center">
                 {!lessonStarted && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-slate-800/90 to-slate-900/95 z-10">
-                    <h4 className="text-2xl font-bold text-white mb-3">Ready to start this lesson?</h4>
-                    <p className="text-slate-300 max-w-md mx-auto mb-6">
-                      Press Play to start the lesson. If emotion tracking is enabled and the app is opened on HTTPS or
-                      localhost, camera permission is requested at this moment.
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-slate-900/90 to-black/95 z-10 backdrop-blur-sm">
+                    <div className="h-16 w-16 bg-brand-600 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(37,99,235,0.6)] cursor-pointer hover:scale-110 transition-transform" onClick={handleStartLesson}>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white ml-1" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <h4 className="text-3xl font-bold text-white mb-3">Ready to learn?</h4>
+                    <p className="text-slate-400 max-w-md mx-auto mb-8 text-sm">
+                      Press play to start. Make sure your environment is well-lit for optimal emotion tracking.
                     </p>
-                    {emotionTracker.cameraSupportIssue && (
-                      <div className="bg-yellow-500/10 text-yellow-200 border border-yellow-500/20 px-4 py-3 rounded-lg text-sm mb-6 max-w-md">
-                        {emotionTracker.cameraSupportIssue} On remote devices over plain HTTP, use Upload Selfie or open
-                        the app over HTTPS.
-                      </div>
-                    )}
+                    
                     <div className="flex flex-wrap gap-4 justify-center">
-                      <button 
-                        type="button" 
-                        className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all hover:scale-105"
-                        onClick={handleStartLesson}
-                      >
-                        Play Lesson
-                      </button>
                       {!emotionTracker.trackingEnabled && (
                         <button 
                           type="button" 
-                          className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl border border-white/10 transition-all"
+                          className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-full border border-slate-700 transition-all shadow-lg"
                           onClick={emotionTracker.toggleTracking}
                         >
                           Arm Emotion Tracking
@@ -988,11 +906,11 @@ export default function LessonPlayerPage({ user }) {
                       )}
                       <button
                         type="button"
-                        className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl border border-white/10 transition-all disabled:opacity-50"
+                        className="px-6 py-2.5 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 text-sm font-semibold rounded-full border border-brand-500/30 transition-all disabled:opacity-50"
                         onClick={() => void emotionTracker.requestCameraPermission()}
                         disabled={emotionTracker.isRequestingCamera}
                       >
-                        {emotionTracker.isRequestingCamera ? "Checking Camera..." : "Allow Camera"}
+                        {emotionTracker.isRequestingCamera ? "Checking..." : "Allow Camera"}
                       </button>
                     </div>
                   </div>
@@ -1000,7 +918,7 @@ export default function LessonPlayerPage({ user }) {
 
                 {lessonStarted && selectedMedia.type === "youtube" && (
                   <iframe
-                    className="lesson-iframe"
+                    className="w-full h-full border-0"
                     src={selectedMedia.src}
                     title={`Lesson video: ${selectedLesson.title}`}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -1011,8 +929,9 @@ export default function LessonPlayerPage({ user }) {
                 {lessonStarted && selectedMedia.type === "video" && (
                   <video
                     ref={lessonVideoRef}
-                    className="lesson-video"
+                    className="w-full h-full object-contain bg-black"
                     controls
+                    autoPlay
                     src={selectedMedia.src}
                     onPlay={handleStartLesson}
                   >
@@ -1020,153 +939,206 @@ export default function LessonPlayerPage({ user }) {
                   </video>
                 )}
 
-                {lessonStarted && selectedMedia.type === "link" && (
-                  <div className="result-panel">
-                    <p>This URL is not a direct video file.</p>
-                    <p>
-                      Open lesson link:{" "}
-                      <a href={selectedMedia.src} target="_blank" rel="noreferrer" onClick={handleStartLesson}>
-                        {selectedMedia.src}
-                      </a>
-                    </p>
-                  </div>
-                )}
-
                 {lessonStarted && selectedMedia.type === "none" && (
-                  <div className="privacy-placeholder">
-                    No media URL is attached to this lesson yet. Use the teacher dashboard to post a video URL.
+                  <div className="text-slate-400 text-sm">
+                    No media URL is attached to this lesson yet.
                   </div>
                 )}
               </div>
 
-              <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-bold text-slate-900">Lesson Progress</h4>
-                  <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{Number(watchTracker.completionPercent || 0).toFixed(1)}% watched</span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                  <span>
-                    {formatClock(watchTracker.currentTimeSec)} / {formatClock(watchTracker.durationSec || selectedLessonDurationSec)}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="flex items-center gap-1">
-                      <span className={`w-2 h-2 rounded-full ${watchTracker.isPlaying ? "bg-green-500" : "bg-slate-300"}`}></span>
-                      {watchTracker.isPlaying ? "Playing" : "Paused"}
-                    </span>
-                    <span className="text-slate-300">|</span>
-                    <span className="flex items-center gap-1">
-                      <span className={`w-2 h-2 rounded-full ${watchTracker.isTabVisible ? "bg-blue-500" : "bg-slate-300"}`}></span>
-                      {watchTracker.isTabVisible ? "Active Tab" : "Background"}
-                    </span>
-                  </span>
-                </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-6" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(watchTracker.completionPercent || 0)}>
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
-                    style={{ width: `${Math.min(100, Number(watchTracker.completionPercent || 0))}%` }}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-6">
-                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${faceEmotionCaptured ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
-                    <span>Face Emotion</span>
-                    <span>{faceEmotionCaptured ? "✅" : "⏳"}</span>
-                  </div>
-                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${textFeedbackSent ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
-                    <span>Text Feedback</span>
-                    <span>{textFeedbackSent ? "✅" : "⏳"}</span>
-                  </div>
-                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${audioFeedbackSent ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
-                    <span>Audio Feedback</span>
-                    <span>{audioFeedbackSent ? "✅" : "⏳"}</span>
-                  </div>
-                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${watchProgressCompleted ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
-                    <span>Watch Progress</span>
-                    <span>{watchProgressCompleted ? "✅" : "⏳"}</span>
-                  </div>
-                </div>
-                {watchProgressCompleted && !hasModalityCapture && (
-                  <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200 mb-4">
-                    Watch target reached. Submit text or audio feedback, or capture face events to complete the lesson.
-                  </p>
-                )}
-                {(lessonCompleted || completionSaved) && (
-                  <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-bold shadow-md mb-4 animate-pulse">
-                    Lesson Completed! 🎉
-                  </div>
-                )}
-                {completionMessage && <div className="text-sm text-green-700 bg-green-50 p-3 rounded-lg border border-green-200 mb-4">{completionMessage}</div>}
-                {progressUpdateError && <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200 mb-4">{progressUpdateError}</p>}
-                
-                <h5 className="text-sm font-bold text-slate-900 mb-3 mt-6">Timeline Events</h5>
-                <div className="flex flex-col gap-3">
-                  {timelineRows.map((row) => (
-                    <div key={`${row.time}-${row.label}`} className="flex gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
-                      <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded h-fit shrink-0 w-16 text-center">{row.time}</span>
+              {/* VIDEO INFO BAR */}
+              <div className="mt-4 mb-6">
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-100 leading-tight mb-2">{selectedLesson.title}</h1>
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg">
+                        {course.title.charAt(0)}
+                      </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-900">{row.label}</p>
-                        <p className="text-sm text-slate-500 mt-0.5">{row.detail}</p>
+                        <p className="text-sm font-bold text-slate-200 leading-none">{course.title}</p>
+                        <p className="text-xs text-slate-500 mt-1">{course.subtitle || "Course"}</p>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="px-3 py-1.5 glass-panel rounded-full flex items-center gap-2 border-brand-500/20">
+                      <span className={`w-2 h-2 rounded-full ${attentionTracker.trackingOn ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" : "bg-slate-600"}`} />
+                      <span className="text-xs font-bold text-slate-300">
+                        {attentionTracker.trackingOn ? "Tracking Active" : "Tracking Idle"}
+                      </span>
+                    </div>
+                    <span className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs font-bold rounded-full border border-slate-700">
+                      {selectedLesson.duration || "10 min"}
+                    </span>
+                  </div>
                 </div>
-              </section>
+              </div>
+
+              {/* TABS & DESCRIPTION */}
+              <div className="glass-panel rounded-2xl p-6">
+                <div className="flex w-full border-b border-slate-800 mb-6">
+                  {["Notes", "Discussion", "Progress"].map((label) => {
+                    const value = label.toLowerCase();
+                    const isActive = activeTab === value;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className={`px-6 py-3 text-sm font-bold border-b-2 transition-all ${isActive ? "border-brand-500 text-brand-400" : "border-transparent text-slate-500 hover:text-slate-300"}`}
+                        onClick={() => setActiveTab(value)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {activeTab === "notes" && (
+                  <div className="space-y-4 text-slate-300">
+                    <p className="text-sm leading-relaxed">{selectedLesson.description}</p>
+                    <div className="mt-8">
+                      <NotesPanel notesValue={notesValue} setNotesValue={setNotesValue} />
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "discussion" && (
+                  <DiscussionPanel
+                    userId={user?.id || user?.email || ""}
+                    courseId={course?.id || ""}
+                    classId={classId || ""}
+                    lessonId={selectedLesson ? String(selectedLesson.lesson_id) : ""}
+                    sessionId={sessionId}
+                    setSessionId={setSessionId}
+                    sessionName={sessionName}
+                    setSessionName={setSessionName}
+                    startSession={startSession}
+                    text={text}
+                    setText={setText}
+                    submitDiscussionMessage={submitDiscussionMessage}
+                    statusMessage={statusMessage}
+                    isSubmitting={isSubmittingMessage}
+                    discussionMessages={visibleDiscussionMessages}
+                    sessionEmotionCounts={sessionEmotionCounts}
+                    setStatusMessage={setStatusMessage}
+                    onVoicePrediction={handleVoicePrediction}
+                  />
+                )}
+
+                {activeTab === "progress" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-base font-bold text-slate-200">Session Progress</h4>
+                      <span className="text-xs font-bold text-brand-400 bg-brand-500/10 px-3 py-1 rounded-full border border-brand-500/20">{Number(watchTracker.completionPercent || 0).toFixed(1)}% watched</span>
+                    </div>
+                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(watchTracker.completionPercent || 0)}>
+                      <div
+                        className="h-full bg-gradient-to-r from-brand-500 to-indigo-500 rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${Math.min(100, Number(watchTracker.completionPercent || 0))}%` }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${faceEmotionCaptured ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
+                        <span className="text-xs font-bold uppercase tracking-wider">Face</span>
+                        <span className="text-xl">{faceEmotionCaptured ? "✅" : "⏳"}</span>
+                      </div>
+                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${textFeedbackSent ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
+                        <span className="text-xs font-bold uppercase tracking-wider">Text</span>
+                        <span className="text-xl">{textFeedbackSent ? "✅" : "⏳"}</span>
+                      </div>
+                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${audioFeedbackSent ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
+                        <span className="text-xs font-bold uppercase tracking-wider">Audio</span>
+                        <span className="text-xl">{audioFeedbackSent ? "✅" : "⏳"}</span>
+                      </div>
+                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${watchProgressCompleted ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
+                        <span className="text-xs font-bold uppercase tracking-wider">Watch</span>
+                        <span className="text-xl">{watchProgressCompleted ? "✅" : "⏳"}</span>
+                      </div>
+                    </div>
+                    {(lessonCompleted || completionSaved) && (
+                      <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-center py-4 rounded-xl font-bold shadow-lg shadow-emerald-500/10 animate-pulse mt-4">
+                        Lesson Completed! 🎉
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           ) : (
-            <div className="empty-state">
-              <h3>No lesson selected</h3>
-              <p>Select a lesson from the left sidebar to begin.</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-12 glass-panel rounded-2xl min-h-[500px]">
+              <div className="w-20 h-20 mb-6 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700 shadow-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-slate-200 mb-2">No lesson selected</h3>
+              <p className="text-slate-500 text-center max-w-md">Select a lesson from the Up Next sidebar to begin your learning session.</p>
             </div>
           )}
         </main>
 
-        <aside className="w-full lg:w-80 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-shrink-0 self-start sticky top-6 max-h-[calc(100vh-2rem)]">
-          <div className="flex w-full border-b border-slate-200 bg-slate-50">
-            {["Discussion", "Notes", "Resources"].map((label) => {
-              const value = label.toLowerCase();
-              const isActive = activeTab === value;
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${isActive ? "border-blue-600 text-blue-700 bg-white" : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100"}`}
-                  onClick={() => setActiveTab(value)}
-                >
-                  {label}
-                </button>
-              );
-            })}
+        {/* Up Next Sidebar (Like YouTube) */}
+        <aside className="w-full lg:w-1/3 xl:w-1/4 flex flex-col gap-6 flex-shrink-0">
+          <div className="glass-panel rounded-2xl overflow-hidden shadow-lg border border-slate-700/50">
+            <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Up Next</h3>
+              <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2 py-1 rounded-md">
+                {classId ? "Class" : "Course"}
+              </span>
+            </div>
+            
+            <div className="overflow-y-auto max-h-[600px] flex flex-col">
+              {(course.modules || []).map((module) => (
+                <div key={module.id} className="border-b border-slate-800/50 last:border-0">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 bg-slate-900 hover:bg-slate-800 transition-colors"
+                    onClick={() => toggleModule(module.id)}
+                  >
+                    <span className="text-sm font-bold text-slate-300">{module.title}</span>
+                    <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-xs border border-slate-700">{module.items.length}</span>
+                  </button>
+                  {openModules[module.id] && (
+                    <div className="flex flex-col bg-slate-900/50">
+                      {module.items.map((lesson, idx) => {
+                        const isActive = String(selectedLesson?.lesson_id) === String(lesson.lesson_id);
+                        return (
+                          <button
+                            key={lesson.lesson_id}
+                            type="button"
+                            className={`w-full flex gap-3 px-4 py-3 text-left transition-all hover:bg-slate-800/80 ${isActive ? "bg-brand-500/10 border-l-2 border-brand-500" : "border-l-2 border-transparent"}`}
+                            onClick={() => selectLesson(lesson.lesson_id)}
+                          >
+                            <div className="relative shrink-0 w-32 h-20 bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
+                              <div className="absolute inset-0 flex items-center justify-center opacity-50">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                </svg>
+                              </div>
+                              <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                {lesson.duration || "10:00"}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0 py-0.5">
+                              <h4 className={`text-sm leading-tight mb-1 line-clamp-2 ${isActive ? "font-bold text-brand-400" : "font-semibold text-slate-200"}`}>
+                                {lesson.title}
+                              </h4>
+                              <p className="text-xs text-slate-500">MELD Learn</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-          
-          <div className="flex-1 overflow-y-auto p-5">
 
-          {activeTab === "discussion" && (
-            <DiscussionPanel
-              userId={user?.id || user?.email || ""}
-              courseId={course?.id || ""}
-              classId={classId || ""}
-              lessonId={selectedLesson ? String(selectedLesson.lesson_id) : ""}
-              sessionId={sessionId}
-              setSessionId={setSessionId}
-              sessionName={sessionName}
-              setSessionName={setSessionName}
-              startSession={startSession}
-              text={text}
-              setText={setText}
-              submitDiscussionMessage={submitDiscussionMessage}
-              statusMessage={statusMessage}
-              isSubmitting={isSubmittingMessage}
-              discussionMessages={visibleDiscussionMessages}
-              sessionEmotionCounts={sessionEmotionCounts}
-              setStatusMessage={setStatusMessage}
-              onVoicePrediction={handleVoicePrediction}
-            />
-          )}
-
-          {activeTab === "notes" && (
-            <NotesPanel notesValue={notesValue} setNotesValue={setNotesValue} />
-          )}
-
-          {activeTab === "resources" && (
+          <div className="glass-panel rounded-2xl p-5 shadow-lg border border-slate-700/50">
             <ResourcesPanel
               selectedLesson={selectedLesson}
               lessonStarted={lessonStarted}
@@ -1175,7 +1147,6 @@ export default function LessonPlayerPage({ user }) {
               watchTracker={watchTracker}
               attentionTracker={attentionTracker}
             />
-          )}
           </div>
         </aside>
       </div>

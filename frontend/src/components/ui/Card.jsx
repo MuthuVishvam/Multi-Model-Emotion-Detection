@@ -1,8 +1,8 @@
-export function Card({ className = "", children, onClick }) {
+export default function Card({ className = "", children, onClick }) {
   return (
     <div 
       onClick={onClick}
-      className={`bg-white rounded-xl border border-slate-200 shadow-[0_2px_10px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-200 ${onClick ? "cursor-pointer hover:shadow-md hover:border-slate-300" : ""} ${className}`}
+      className={`glass-card overflow-hidden transition-all duration-300 ${onClick ? "cursor-pointer hover:shadow-xl hover:border-brand-500/50 hover:-translate-y-1" : ""} ${className}`}
     >
       {children}
     </div>
@@ -11,7 +11,7 @@ export function Card({ className = "", children, onClick }) {
 
 export function CardHeader({ className = "", children }) {
   return (
-    <div className={`px-5 py-4 border-b border-slate-100/60 flex flex-col gap-1 ${className}`}>
+    <div className={`px-6 py-5 border-b border-slate-700/50 flex flex-col gap-1.5 ${className}`}>
       {children}
     </div>
   );
@@ -19,7 +19,7 @@ export function CardHeader({ className = "", children }) {
 
 export function CardTitle({ className = "", children }) {
   return (
-    <h3 className={`text-base font-semibold text-slate-900 tracking-tight ${className}`}>
+    <h3 className={`text-lg font-semibold text-slate-100 tracking-tight ${className}`}>
       {children}
     </h3>
   );
@@ -27,7 +27,7 @@ export function CardTitle({ className = "", children }) {
 
 export function CardDescription({ className = "", children }) {
   return (
-    <p className={`text-sm text-slate-500 ${className}`}>
+    <p className={`text-sm text-slate-400 ${className}`}>
       {children}
     </p>
   );
@@ -35,7 +35,7 @@ export function CardDescription({ className = "", children }) {
 
 export function CardContent({ className = "", children }) {
   return (
-    <div className={`p-5 ${className}`}>
+    <div className={`p-6 ${className}`}>
       {children}
     </div>
   );
