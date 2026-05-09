@@ -10,6 +10,7 @@ const DEFAULT_EMOTION_OPTIONS = [
   "surprise",
   "fear",
   "disgust",
+  "no_face_detected",
 ];
 
 function normalizeEmotionLabel(value) {

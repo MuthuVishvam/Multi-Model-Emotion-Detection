@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PowerBIEmbed } from 'powerbi-client-react';
 import { models } from 'powerbi-client';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { BarChart, Loader2, AlertCircle } from 'lucide-react';
 
-export default function PowerBIDashboard({ reportId, embedUrl, accessToken, title = "Advanced Analytics" }) {
+export default function PowerBIDashboard({ reportId, embedUrl, accessToken, title = "Advanced Analytics", activeFilters = [] }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const reportRef = useRef(null);
 
   // For demonstration, if no token is provided, we simulate a loading/error state
-  // In a real scenario, these would be fetched from the backend.
   useEffect(() => {
     if (!accessToken) {
       const timer = setTimeout(() => {
@@ -21,6 +21,20 @@ export default function PowerBIDashboard({ reportId, embedUrl, accessToken, titl
       setIsLoading(false);
     }
   }, [accessToken]);
+
+  // Apply filters when activeFilters prop changes
+  useEffect(() => {
+    if (reportRef.current && activeFilters && activeFilters.length > 0) {
+      reportRef.current.setFilters(activeFilters).catch(err => {
+        console.error("Error applying Power BI filters", err);
+      });
+    } else if (reportRef.current) {
+      // Clear filters if activeFilters is empty
+      reportRef.current.removeFilters().catch(err => {
+        console.error("Error removing Power BI filters", err);
+      });
+    }
+  }, [activeFilters]);
 
   return (
     <Card className="w-full overflow-hidden border-indigo-100 shadow-md">
@@ -67,6 +81,9 @@ export default function PowerBIDashboard({ reportId, embedUrl, accessToken, titl
                 }
               }}
               cssClassName="w-full h-full border-none"
+              getEmbeddedComponent={(embeddedReport) => {
+                reportRef.current = embeddedReport;
+              }}
               eventHandlers={
                 new Map([
                   ['loaded', function () { console.log('Power BI Report loaded'); }],

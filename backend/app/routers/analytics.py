@@ -256,3 +256,65 @@ async def get_live_students_analytics(
         emotion_label=emotion_label,
     )
     return LiveStudentsAnalyticsResponse(**result)
+
+
+@router.get("/student/{student_id}/history")
+async def get_student_emotion_history(
+    student_id: str,
+    lesson_id: str | None = Query(default=None),
+    class_id: str | None = Query(default=None),
+    teacher_user: dict = Depends(require_teacher),
+):
+    # This is a stub for the student drill down
+    # In a real scenario, this would aggregate data specifically for the student
+    # over the selected time ranges using the existing emotion_events and attention_events collections.
+    
+    # We will build a dummy fallback response for now that perfectly matches the frontend Recharts expectations
+    return {
+        "student_id": student_id,
+        "lesson_id": lesson_id or "all",
+        "class_id": class_id or "all",
+        "engagement": 85.0,
+        "attention": 78.5,
+        "completion": 100.0,
+        "dominant_emotion": "interest",
+        "emotion_percentages": {
+            "interest": 45,
+            "neutral": 30,
+            "confusion": 15,
+            "happiness": 10
+        },
+        "modality_history": {
+            "face": [{"emotion": "interest", "count": 20}, {"emotion": "neutral", "count": 10}],
+            "text": [{"emotion": "confusion", "count": 5}],
+            "voice": [{"emotion": "happiness", "count": 2}]
+        },
+        "timeline": [
+            {"minute": "2026-05-09T10:00:00Z", "interest": 80, "confusion": 20},
+            {"minute": "2026-05-09T10:15:00Z", "interest": 90, "confusion": 10},
+            {"minute": "2026-05-09T10:30:00Z", "interest": 70, "confusion": 30}
+        ],
+        "session_history": [
+            {
+                "date": "2026-05-09T10:00:00Z",
+                "lesson_name": "Database Normalization",
+                "duration": 45.0,
+                "dominant_emotion": "interest",
+                "attention": 82.0,
+                "completion": 100.0,
+                "transcript_summary": "I'm confused with joins"
+            }
+        ]
+    }
+
+
+@router.get("/powerbi/embed-token")
+async def get_powerbi_embed_token(
+    teacher_user: dict = Depends(require_teacher),
+):
+    # Stub for Azure AD Power BI token generation
+    return {
+        "accessToken": None, # Force fallback
+        "embedUrl": "https://app.powerbi.com/reportEmbed?reportId=dummy",
+        "reportId": "dummy-report-id"
+    }

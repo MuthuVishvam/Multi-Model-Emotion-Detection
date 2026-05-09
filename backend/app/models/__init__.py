@@ -5,6 +5,7 @@ from app.models.emotion_model import AttentionEventDocument, EmotionEventDocumen
 from app.models.lesson_model import LessonAssignmentDocument, LessonDocument
 from app.models.notification_model import NotificationDocument
 from app.models.user_model import AuthCredential, UserDocument
+from app.models.analytics_model import StudentEmotionHistory
 
 MODEL_DOCUMENT_EXPORTS = [
     "UserDocument",
@@ -17,4 +18,5 @@ MODEL_DOCUMENT_EXPORTS = [
     "EmotionEventDocument",
     "AttentionEventDocument",
     "NotificationDocument",
+    "StudentEmotionHistory",
 ]

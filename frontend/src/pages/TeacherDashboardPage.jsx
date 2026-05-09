@@ -32,6 +32,7 @@ import EmotionFilterBar, {
 } from "../components/EmotionFilterBar";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/Card";
 import PowerBIDashboard from "../powerbi/PowerBIEmbed";
+import StudentAnalyticsDashboard from "./StudentAnalyticsDashboard";
 
 function buildIsoStart(dateValue) {
   if (!dateValue) {
@@ -89,106 +90,7 @@ function toTimelineData(timelineBuckets = []) {
   }));
 }
 
-function StudentDetailModal({ student, onClose }) {
-  if (!student) {
-    return null;
-  }
 
-  const timelineData = (student.timeline || []).map((row) => ({
-    minute: row.minute,
-    emotion_total: Number(row.emotion_total || 0),
-    focused: Number(row.attention_counts?.focused || 0),
-    no_face: Number(row.attention_counts?.no_face || 0),
-    away: Number(row.attention_counts?.away || 0),
-    idle: Number(row.attention_counts?.idle || 0),
-  }));
-
-  return (
-    <div className="modal-overlay" role="presentation" onClick={onClose}>
-      <section className="card modal-card analytics-student-modal" role="dialog" onClick={(event) => event.stopPropagation()}>
-        <div className="section-header-row">
-          <h3>{student.student_name}</h3>
-          <button className="secondary" onClick={onClose}>Close</button>
-        </div>
-
-        <div className="analytics-summary-grid">
-          <div className="chart-card">
-            <p className="small-note">Dominant overall</p>
-            <strong>{student.dominant_emotion_overall || "unknown"}</strong>
-          </div>
-          <div className="chart-card">
-            <p className="small-note">Completion</p>
-            <strong>{formatPercent(student.completion_percent)}</strong>
-          </div>
-          <div className="chart-card">
-            <p className="small-note">Last seen</p>
-            <strong>{formatDateTime(student.last_seen)}</strong>
-          </div>
-        </div>
-
-        <div className="chart-card">
-          <h4>Emotion + Attention Timeline</h4>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={timelineData}>
-              <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
-              <XAxis dataKey="minute" minTickGap={20} stroke={CHART_AXIS_COLOR} />
-              <YAxis stroke={CHART_AXIS_COLOR} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="emotion_total" stroke={getChartColor("emotion_total")} strokeWidth={2} />
-              <Line type="monotone" dataKey="focused" stroke={getChartColor("focused")} strokeWidth={2} />
-              <Line type="monotone" dataKey="no_face" stroke={getChartColor("no_face")} />
-              <Line type="monotone" dataKey="away" stroke={getChartColor("away")} />
-              <Line type="monotone" dataKey="idle" stroke={getChartColor("idle")} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="analytics-detail-grid">
-          <div className="chart-card">
-            <h4>Text Comments</h4>
-            <div className="analytics-list-scroll">
-              {(student.text_comments || []).map((item, index) => (
-                <article key={`${item.timestamp}-${index}`} className="analytics-list-item">
-                  <p>{item.comment}</p>
-                  <p className="small-note">
-                    {formatDateTime(item.timestamp)} | {item.emotion_label} ({Number(item.confidence || 0).toFixed(2)})
-                  </p>
-                </article>
-              ))}
-              {(student.text_comments || []).length === 0 && <p className="small-note">No text comments.</p>}
-            </div>
-          </div>
-
-          <div className="chart-card">
-            <h4>Voice Feedback</h4>
-            <div className="analytics-list-scroll">
-              {(student.voice_feedback || []).map((item, index) => (
-                <article key={`${item.timestamp}-${index}`} className="analytics-list-item">
-                  <p>{item.feedback}</p>
-                  <p className="small-note">
-                    {formatDateTime(item.timestamp)} | {item.emotion_label} ({Number(item.confidence || 0).toFixed(2)})
-                  </p>
-                </article>
-              ))}
-              {(student.voice_feedback || []).length === 0 && <p className="small-note">No voice feedback.</p>}
-            </div>
-          </div>
-        </div>
-
-        <div className="chart-card">
-          <h4>Flags</h4>
-          <div className="analytics-flags">
-            {(student.flags || []).map((flag) => (
-              <span key={flag} className="emotion-count-chip">{flag}</span>
-            ))}
-            {(student.flags || []).length === 0 && <p className="small-note">No flags for this student.</p>}
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
 
 export default function TeacherDashboardPage() {
   const [classes, setClasses] = useState([]);
@@ -690,22 +592,6 @@ export default function TeacherDashboardPage() {
                     <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="pt-4 border-t border-slate-100">
-                  <h4 className="text-sm font-semibold text-slate-700 mb-4">Emotion Timeline</h4>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={faceTimelineData}>
-                      <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
-                      <XAxis dataKey="minute" minTickGap={20} stroke={CHART_AXIS_COLOR} tick={{fontSize: 12}} />
-                      <YAxis stroke={CHART_AXIS_COLOR} tick={{fontSize: 12}} />
-                      <Tooltip />
-                      <Legend wrapperStyle={{fontSize: 12}} />
-                      <Line type="monotone" dataKey="total" stroke={getChartColor("total")} strokeWidth={2} dot={false} />
-                      {faceEmotionLines.map((emotion, index) => (
-                        <Line key={emotion} type="monotone" dataKey={emotion} stroke={getChartColor(emotion, index + 1)} dot={false} />
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
               </CardContent>
             </Card>
 
@@ -727,34 +613,6 @@ export default function TeacherDashboardPage() {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                <div className="pt-4 border-t border-slate-100">
-                  <h4 className="text-sm font-semibold text-slate-700 mb-4">Distribution</h4>
-                  <ResponsiveContainer width="100%" height={190}>
-                    <PieChart>
-                      <Pie data={textPieData} dataKey="value" nameKey="label" outerRadius={70} label>
-                        {textPieData.map((entry, index) => (
-                          <Cell key={`text-${index}`} fill={getChartColor(entry.label, index)} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="pt-4 border-t border-slate-100">
-                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Top Negative Comments</h4>
-                  <div className="flex flex-col gap-3 max-h-48 overflow-y-auto pr-2">
-                    {(text?.top_negative_comments || []).map((item, index) => (
-                      <article key={`${item.timestamp}-${index}`} className="p-3 bg-red-50 border border-red-100 rounded-lg text-sm">
-                        <p className="text-slate-800 font-medium mb-1">{item.comment}</p>
-                        <p className="text-xs text-slate-500 flex justify-between">
-                          <span>{item.student_name}</span>
-                          <span className="font-semibold text-red-600">{item.emotion_label} ({(Number(item.confidence || 0)*100).toFixed(0)}%)</span>
-                        </p>
-                      </article>
-                    ))}
-                    {(text?.top_negative_comments || []).length === 0 && <p className="text-sm text-slate-500 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">No negative comments.</p>}
-                  </div>
-                </div>
               </CardContent>
             </Card>
 
@@ -773,21 +631,87 @@ export default function TeacherDashboardPage() {
                     <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="pt-4 border-t border-slate-100">
-                  <h4 className="text-sm font-semibold text-slate-700 mb-3">Voice Feedback Transcripts</h4>
-                  <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
-                    {(voice?.feedback_items || []).map((item, index) => (
-                      <article key={`${item.timestamp}-${index}`} className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm">
-                        <p className="text-slate-800 mb-2">"{item.feedback}"</p>
-                        <div className="flex flex-wrap items-center justify-between text-xs gap-2">
-                          <span className="text-slate-500">{formatDateTime(item.timestamp)}</span>
-                          <span className="px-2 py-1 bg-white rounded border border-slate-200 font-medium text-slate-700">{item.student_name}</span>
-                          <span className="font-semibold text-indigo-600 uppercase tracking-wider text-[10px]">{item.emotion_label}</span>
-                        </div>
-                      </article>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Emotion Timeline</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={faceTimelineData}>
+                    <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                    <XAxis dataKey="minute" minTickGap={20} stroke={CHART_AXIS_COLOR} tick={{fontSize: 12}} />
+                    <YAxis stroke={CHART_AXIS_COLOR} tick={{fontSize: 12}} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{fontSize: 12}} />
+                    <Line type="monotone" dataKey="total" stroke={getChartColor("total")} strokeWidth={2} dot={false} />
+                    {faceEmotionLines.map((emotion, index) => (
+                      <Line key={emotion} type="monotone" dataKey={emotion} stroke={getChartColor(emotion, index + 1)} dot={false} />
                     ))}
-                    {(voice?.feedback_items || []).length === 0 && <p className="text-sm text-slate-500 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">No voice feedback.</p>}
-                  </div>
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Text Emotion Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={textPieData} dataKey="value" nameKey="label" outerRadius={85} label>
+                      {textPieData.map((entry, index) => (
+                        <Cell key={`text-${index}`} fill={getChartColor(entry.label, index)} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Voice Feedback Transcripts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                  {(voice?.feedback_items || []).map((item, index) => (
+                    <article key={`${item.timestamp}-${index}`} className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm">
+                      <p className="text-slate-800 mb-2">"{item.feedback}"</p>
+                      <div className="flex flex-wrap items-center justify-between text-xs gap-2">
+                        <span className="text-slate-500">{formatDateTime(item.timestamp)}</span>
+                        <span className="px-2 py-1 bg-white rounded border border-slate-200 font-medium text-slate-700">{item.student_name}</span>
+                        <span className="font-semibold text-indigo-600 uppercase tracking-wider text-[10px]">{item.emotion_label}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(voice?.feedback_items || []).length === 0 && <p className="text-sm text-slate-500 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">No voice feedback.</p>}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-red-600">Top Negative Comments</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                  {(text?.top_negative_comments || []).map((item, index) => (
+                    <article key={`${item.timestamp}-${index}`} className="p-3 bg-red-50 border border-red-100 rounded-lg text-sm">
+                      <p className="text-slate-800 font-medium mb-1">{item.comment}</p>
+                      <p className="text-xs text-slate-500 flex justify-between">
+                        <span>{item.student_name}</span>
+                        <span className="font-semibold text-red-600">{item.emotion_label} ({(Number(item.confidence || 0)*100).toFixed(0)}%)</span>
+                      </p>
+                    </article>
+                  ))}
+                  {(text?.top_negative_comments || []).length === 0 && <p className="text-sm text-slate-500 italic bg-slate-50 p-3 rounded-lg text-center border border-slate-100">No negative comments.</p>}
                 </div>
               </CardContent>
             </Card>
@@ -860,12 +784,28 @@ export default function TeacherDashboardPage() {
               reportId={null} 
               embedUrl={null} 
               accessToken={null} 
+              activeFilters={
+                selectedEmotion ? [{
+                  $schema: "http://powerbi.com/product/schema#basic",
+                  target: { table: "EmotionAnalytics", column: "Emotion" },
+                  operator: "In",
+                  values: [selectedEmotion]
+                }] : []
+              }
             />
           </div>
         </>
       )}
 
-      <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />
+      {selectedStudent && (
+        <StudentAnalyticsDashboard
+          studentId={selectedStudent.user_id}
+          studentName={selectedStudent.student_name}
+          classId={selectedClassId}
+          lessonId={selectedLessonId}
+          onClose={() => setSelectedStudent(null)}
+        />
+      )}
     </div>
   );
 }
