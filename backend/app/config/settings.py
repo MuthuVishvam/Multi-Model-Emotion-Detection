@@ -24,7 +24,16 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     frontend_origin: str | None = Field(default=None, validation_alias=AliasChoices("FRONTEND_ORIGIN"))
-    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    cors_origin_regex: str = (
+        r"^https?://("
+        r"localhost"
+        r"|127\.0\.0\.1"
+        r"|0\.0\.0\.0"
+        r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|192\.168\.\d{1,3}\.\d{1,3}"
+        r"|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"
+        r")(:\d+)?$"
+    )
     log_level: str = "INFO"
     emotion_rate_limit_requests: int = 120
     emotion_rate_limit_window_seconds: int = 60

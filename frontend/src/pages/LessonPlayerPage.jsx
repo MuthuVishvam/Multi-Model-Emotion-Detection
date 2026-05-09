@@ -212,6 +212,17 @@ function ResourcesPanel({
   watchTracker,
   attentionTracker,
 }) {
+  const manualFaceInputRef = useRef(null);
+
+  async function handleManualFaceUpload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    await tracker.captureFaceFromImage(file);
+  }
+
   return (
     <div className="side-panel-section">
       <h4>Resources & Commands</h4>
@@ -250,12 +261,36 @@ function ResourcesPanel({
         >
           {tracker.trackingEnabled ? "Stop Emotion Tracking" : "Start Emotion Tracking"}
         </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void tracker.requestCameraPermission()}
+          disabled={tracker.isRequestingCamera}
+        >
+          {tracker.isRequestingCamera ? "Checking Camera..." : "Allow Camera"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => manualFaceInputRef.current?.click()}
+          disabled={!tracker.canLogFaceEvents || tracker.isAnalyzingFaceImage}
+        >
+          {tracker.isAnalyzingFaceImage ? "Analyzing Selfie..." : "Upload Selfie"}
+        </button>
         <p className="small-note">{tracker.statusText}</p>
         {!lessonStarted && tracker.trackingEnabled && (
           <p className="small-note">Camera permission will be requested only after you press Play.</p>
         )}
+        {tracker.cameraSupportIssue && (
+          <div className="inline-message inline-message-soft">
+            {tracker.cameraSupportIssue} Use HTTPS for live camera tracking, or use Upload Selfie as a fallback.
+          </div>
+        )}
         {tracker.permissionDenied && (
           <p className="small-note">Camera permission was denied. Lesson playback continues without tracking.</p>
+        )}
+        {!tracker.canLogFaceEvents && (
+          <p className="small-note">Start a lesson session first if you want uploaded face captures to be stored.</p>
         )}
         <p className="small-note">
           Buffered detections: {tracker.queueSize}
@@ -312,6 +347,17 @@ function ResourcesPanel({
           </div>
         )}
       </div>
+
+      <input
+        ref={manualFaceInputRef}
+        type="file"
+        accept="image/*"
+        capture="user"
+        className="media-file-input"
+        onChange={(event) => {
+          void handleManualFaceUpload(event);
+        }}
+      />
     </div>
   );
 }
@@ -826,28 +872,28 @@ export default function LessonPlayerPage({ user }) {
 
   return (
     <div className="learning-page">
-      <div className="lesson-page-header card">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm mb-6">
         <div>
-          <p className="eyebrow">Lesson Player</p>
-          <h2>{course.title}</h2>
-          <p>{selectedLesson?.title || "Select a lesson"}</p>
+          <p className="text-xs font-bold tracking-wider text-slate-500 uppercase mb-1">Lesson Player</p>
+          <h2 className="text-2xl font-bold text-slate-900 leading-tight">{course.title}</h2>
+          <p className="text-sm text-slate-500 mt-1">{selectedLesson?.title || "Select a lesson"}</p>
         </div>
-        <div className="lesson-page-header__actions">
+        <div className="flex flex-wrap gap-3 items-center">
           <TrackingIndicator tracker={emotionTracker} />
-          <div className={attentionTracker.trackingOn ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
-            <span className="tracking-indicator__dot" aria-hidden="true" />
+          <div className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 border ${attentionTracker.trackingOn ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>
+            <span className={`w-2 h-2 rounded-full ${attentionTracker.trackingOn ? "bg-green-500 animate-pulse" : "bg-slate-400"}`} aria-hidden="true" />
             <span>{attentionTracker.trackingOn ? "Tracking on" : "Tracking idle"}</span>
           </div>
           {classId ? (
-            <Link className="button-link button-link-secondary" to={`/student/classes/${classId}/lessons`}>
+            <Link className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors" to={`/student/classes/${classId}/lessons`}>
               Class Lessons
             </Link>
           ) : (
-            <Link className="button-link button-link-secondary" to={`/student/courses/${course.id}`}>
+            <Link className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors" to={`/student/courses/${course.id}`}>
               Syllabus
             </Link>
           )}
-          <Link className="button-link button-link-secondary" to="/student">
+          <Link className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors" to="/student">
             Catalog
           </Link>
         </div>
@@ -855,39 +901,42 @@ export default function LessonPlayerPage({ user }) {
 
       {courseLoadError && <div className="card inline-message">{courseLoadError}</div>}
 
-      <div className="lesson-player-layout">
-        <aside className="card lesson-sidebar">
-          <div className="lesson-sidebar__section">
-            <p className="eyebrow">Course Sections</p>
-            <h3>{course.title}</h3>
-            <p className="small-note">{course.subtitle}</p>
+      <div className="flex flex-col lg:flex-row gap-6">
+        <aside className="w-full lg:w-72 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-shrink-0 self-start sticky top-6">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+            <p className="text-xs font-bold tracking-wider text-slate-500 uppercase mb-1">Course Sections</p>
+            <h3 className="text-base font-bold text-slate-900 leading-tight">{course.title}</h3>
+            <p className="text-sm text-slate-500 mt-1 line-clamp-2">{course.subtitle}</p>
           </div>
 
-          <div className="lesson-sidebar__modules">
+          <div className="overflow-y-auto max-h-[60vh] p-3 space-y-2">
             {(course.modules || []).map((module) => (
-              <div key={module.id} className="sidebar-module">
+              <div key={module.id} className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
                 <button
                   type="button"
-                  className={openModules[module.id] ? "sidebar-module__trigger active" : "sidebar-module__trigger"}
+                  className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold transition-colors ${openModules[module.id] ? "bg-slate-50 text-blue-700" : "bg-white text-slate-700 hover:bg-slate-50"}`}
                   onClick={() => toggleModule(module.id)}
                 >
-                  <span>{module.title}</span>
-                  <span>{module.items.length}</span>
+                  <span className="text-left">{module.title}</span>
+                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-xs">{module.items.length}</span>
                 </button>
                 {openModules[module.id] && (
-                  <ul className="lesson-list">
-                    {module.items.map((lesson) => (
-                      <li key={lesson.lesson_id}>
-                        <button
-                          type="button"
-                          className={String(selectedLesson?.lesson_id) === String(lesson.lesson_id) ? "lesson-btn active" : "lesson-btn"}
-                          onClick={() => selectLesson(lesson.lesson_id)}
-                        >
-                          <span className="lesson-btn__title">{lesson.title}</span>
-                          <span className="lesson-btn__meta">{lesson.duration || "10 min"}</span>
-                        </button>
-                      </li>
-                    ))}
+                  <ul className="flex flex-col divide-y divide-slate-50 border-t border-slate-50 bg-slate-50/30">
+                    {module.items.map((lesson) => {
+                      const isActive = String(selectedLesson?.lesson_id) === String(lesson.lesson_id);
+                      return (
+                        <li key={lesson.lesson_id}>
+                          <button
+                            type="button"
+                            className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${isActive ? "bg-blue-50 border-l-4 border-blue-600 text-blue-700" : "border-l-4 border-transparent text-slate-600 hover:bg-slate-100"}`}
+                            onClick={() => selectLesson(lesson.lesson_id)}
+                          >
+                            <span className={`text-sm ${isActive ? "font-bold" : "font-medium"}`}>{lesson.title}</span>
+                            <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{lesson.duration || "10 min"}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -895,32 +944,56 @@ export default function LessonPlayerPage({ user }) {
           </div>
         </aside>
 
-        <main className="card lesson-main">
+        <main className="flex-1 flex flex-col gap-6 min-w-0">
           {selectedLesson ? (
             <>
-              <div className="lesson-main__header">
-                <div>
-                  <h3>{selectedLesson.title}</h3>
-                  <p>{selectedLesson.description}</p>
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-xl font-bold text-slate-900 truncate">{selectedLesson.title}</h3>
+                  <p className="text-sm text-slate-500 mt-1 line-clamp-2">{selectedLesson.description}</p>
                 </div>
-                <span className="lesson-duration-pill">{selectedLesson.duration || "10 min"}</span>
+                <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg shrink-0 border border-slate-200">{selectedLesson.duration || "10 min"}</span>
               </div>
 
-              <div className="player-frame">
+              <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-lg border border-slate-800 relative">
                 {!lessonStarted && (
-                  <div className="lesson-start-panel">
-                    <h4>Ready to start this lesson?</h4>
-                    <p>
-                      Press Play to start the lesson. If emotion tracking is enabled, camera permission is requested at
-                      this moment only.
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-slate-800/90 to-slate-900/95 z-10">
+                    <h4 className="text-2xl font-bold text-white mb-3">Ready to start this lesson?</h4>
+                    <p className="text-slate-300 max-w-md mx-auto mb-6">
+                      Press Play to start the lesson. If emotion tracking is enabled and the app is opened on HTTPS or
+                      localhost, camera permission is requested at this moment.
                     </p>
-                    <div className="lesson-start-panel__actions">
-                      <button type="button" onClick={handleStartLesson}>Play</button>
+                    {emotionTracker.cameraSupportIssue && (
+                      <div className="bg-yellow-500/10 text-yellow-200 border border-yellow-500/20 px-4 py-3 rounded-lg text-sm mb-6 max-w-md">
+                        {emotionTracker.cameraSupportIssue} On remote devices over plain HTTP, use Upload Selfie or open
+                        the app over HTTPS.
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-4 justify-center">
+                      <button 
+                        type="button" 
+                        className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all hover:scale-105"
+                        onClick={handleStartLesson}
+                      >
+                        Play Lesson
+                      </button>
                       {!emotionTracker.trackingEnabled && (
-                        <button type="button" className="secondary" onClick={emotionTracker.toggleTracking}>
+                        <button 
+                          type="button" 
+                          className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl border border-white/10 transition-all"
+                          onClick={emotionTracker.toggleTracking}
+                        >
                           Arm Emotion Tracking
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl border border-white/10 transition-all disabled:opacity-50"
+                        onClick={() => void emotionTracker.requestCameraPermission()}
+                        disabled={emotionTracker.isRequestingCamera}
+                      >
+                        {emotionTracker.isRequestingCamera ? "Checking Camera..." : "Allow Camera"}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -966,48 +1039,72 @@ export default function LessonPlayerPage({ user }) {
                 )}
               </div>
 
-              <section className="timeline-card">
-                <div className="section-header-row">
-                  <h4>Lesson Progress</h4>
-                  <span>{Number(watchTracker.completionPercent || 0).toFixed(1)}% watched</span>
+              <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-lg font-bold text-slate-900">Lesson Progress</h4>
+                  <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{Number(watchTracker.completionPercent || 0).toFixed(1)}% watched</span>
                 </div>
-                <div className="lesson-progress-meta">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
                   <span>
                     {formatClock(watchTracker.currentTimeSec)} / {formatClock(watchTracker.durationSec || selectedLessonDurationSec)}
                   </span>
-                  <span>
-                    {watchTracker.isPlaying ? "Video playing" : "Video paused"} | {watchTracker.isTabVisible ? "Tab visible" : "Tab hidden"}
+                  <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${watchTracker.isPlaying ? "bg-green-500" : "bg-slate-300"}`}></span>
+                      {watchTracker.isPlaying ? "Playing" : "Paused"}
+                    </span>
+                    <span className="text-slate-300">|</span>
+                    <span className="flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${watchTracker.isTabVisible ? "bg-blue-500" : "bg-slate-300"}`}></span>
+                      {watchTracker.isTabVisible ? "Active Tab" : "Background"}
+                    </span>
                   </span>
                 </div>
-                <div className="lesson-progress-line" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(watchTracker.completionPercent || 0)}>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-6" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(watchTracker.completionPercent || 0)}>
                   <div
-                    className="lesson-progress-line__fill"
+                    className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
                     style={{ width: `${Math.min(100, Number(watchTracker.completionPercent || 0))}%` }}
                   />
                 </div>
-                <div className="lesson-checklist">
-                  <p>{faceEmotionCaptured ? "Face emotion captured ✅" : "Face emotion captured ❌"}</p>
-                  <p>{textFeedbackSent ? "Text feedback sent ✅" : "Text feedback sent ❌"}</p>
-                  <p>{audioFeedbackSent ? "Audio feedback sent ✅" : "Audio feedback sent ❌"}</p>
-                  <p>{watchProgressCompleted ? "Watch progress completed ✅" : "Watch progress completed ❌"}</p>
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${faceEmotionCaptured ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
+                    <span>Face Emotion</span>
+                    <span>{faceEmotionCaptured ? "✅" : "⏳"}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${textFeedbackSent ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
+                    <span>Text Feedback</span>
+                    <span>{textFeedbackSent ? "✅" : "⏳"}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${audioFeedbackSent ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
+                    <span>Audio Feedback</span>
+                    <span>{audioFeedbackSent ? "✅" : "⏳"}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border flex items-center justify-between text-sm ${watchProgressCompleted ? "bg-green-50 border-green-200 text-green-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-500"}`}>
+                    <span>Watch Progress</span>
+                    <span>{watchProgressCompleted ? "✅" : "⏳"}</span>
+                  </div>
                 </div>
                 {watchProgressCompleted && !hasModalityCapture && (
-                  <p className="small-note">
+                  <p className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200 mb-4">
                     Watch target reached. Submit text or audio feedback, or capture face events to complete the lesson.
                   </p>
                 )}
                 {(lessonCompleted || completionSaved) && (
-                  <div className="lesson-completed-banner">Lesson Completed</div>
+                  <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-bold shadow-md mb-4 animate-pulse">
+                    Lesson Completed! 🎉
+                  </div>
                 )}
-                {completionMessage && <div className="inline-message inline-message-soft">{completionMessage}</div>}
-                {progressUpdateError && <p className="small-note">{progressUpdateError}</p>}
-                <div className="timeline-list">
+                {completionMessage && <div className="text-sm text-green-700 bg-green-50 p-3 rounded-lg border border-green-200 mb-4">{completionMessage}</div>}
+                {progressUpdateError && <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200 mb-4">{progressUpdateError}</p>}
+                
+                <h5 className="text-sm font-bold text-slate-900 mb-3 mt-6">Timeline Events</h5>
+                <div className="flex flex-col gap-3">
                   {timelineRows.map((row) => (
-                    <div key={`${row.time}-${row.label}`} className="timeline-row">
-                      <span className="timeline-row__time">{row.time}</span>
+                    <div key={`${row.time}-${row.label}`} className="flex gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                      <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded h-fit shrink-0 w-16 text-center">{row.time}</span>
                       <div>
-                        <p className="timeline-row__label">{row.label}</p>
-                        <p className="timeline-row__detail">{row.detail}</p>
+                        <p className="text-sm font-bold text-slate-900">{row.label}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{row.detail}</p>
                       </div>
                     </div>
                   ))}
@@ -1022,15 +1119,16 @@ export default function LessonPlayerPage({ user }) {
           )}
         </main>
 
-        <aside className="card lesson-side-panel">
-          <div className="tab-row">
+        <aside className="w-full lg:w-80 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-shrink-0 self-start sticky top-6 max-h-[calc(100vh-2rem)]">
+          <div className="flex w-full border-b border-slate-200 bg-slate-50">
             {["Discussion", "Notes", "Resources"].map((label) => {
               const value = label.toLowerCase();
+              const isActive = activeTab === value;
               return (
                 <button
                   key={label}
                   type="button"
-                  className={activeTab === value ? "tab-btn active" : "tab-btn"}
+                  className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${isActive ? "border-blue-600 text-blue-700 bg-white" : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100"}`}
                   onClick={() => setActiveTab(value)}
                 >
                   {label}
@@ -1038,6 +1136,8 @@ export default function LessonPlayerPage({ user }) {
               );
             })}
           </div>
+          
+          <div className="flex-1 overflow-y-auto p-5">
 
           {activeTab === "discussion" && (
             <DiscussionPanel
@@ -1076,9 +1176,9 @@ export default function LessonPlayerPage({ user }) {
               attentionTracker={attentionTracker}
             />
           )}
+          </div>
         </aside>
       </div>
     </div>
   );
 }
-

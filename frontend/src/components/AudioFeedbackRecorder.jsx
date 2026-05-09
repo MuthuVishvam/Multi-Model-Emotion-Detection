@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { apiMultipartRequest } from "../services/api";
+import {
+  getMediaSupportSnapshot,
+  getMicrophoneSupportIssue,
+  queryMediaPermissionState,
+} from "../services/mediaSupport";
 
 const MIN_RECORD_SECONDS = 10;
 const MAX_RECORD_SECONDS = 30;
@@ -135,13 +140,20 @@ export default function AudioFeedbackRecorder({
   const recordingSecondsRef = useRef(0);
   const intervalRef = useRef(null);
   const timeoutRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [lastVoiceResult, setLastVoiceResult] = useState(null);
   const [uploadState, setUploadState] = useState("idle");
+  const [microphonePermissionState, setMicrophonePermissionState] = useState("unknown");
+  const [microphoneSupportIssue, setMicrophoneSupportIssue] = useState("");
+
+  const mediaSnapshot = getMediaSupportSnapshot();
+  const liveRecordingSupported = !getMicrophoneSupportIssue(mediaSnapshot, { requireRecorder: true });
 
   function clearTimers() {
     if (intervalRef.current) {
@@ -212,44 +224,29 @@ export default function AudioFeedbackRecorder({
     return response;
   }
 
-  async function finalizeRecording() {
-    clearTimers();
-    setIsRecording(false);
-
-    const seconds = recordingSecondsRef.current;
-    if (seconds < MIN_RECORD_SECONDS) {
-      setErrorText(`Please record at least ${MIN_RECORD_SECONDS} seconds.`);
-      setUploadState("failed");
-      stopStream();
-      return;
-    }
-
-    const recordedMimeType = recorderRef.current?.mimeType || chunksRef.current[0]?.type || "audio/webm";
-    const mediaBlob = new Blob(chunksRef.current, { type: recordedMimeType });
-    if (mediaBlob.size === 0) {
-      setErrorText("No audio captured. Please try recording again.");
-      setUploadState("failed");
-      stopStream();
-      return;
-    }
-
+  async function processVoiceUpload(blob, filename, { convertToWav = false } = {}) {
     setIsUploading(true);
     setUploadState("uploading");
     setErrorText("");
+    setLastVoiceResult(null);
     const timestamp = new Date().toISOString();
 
     try {
-      let uploadBlob = mediaBlob;
-      let extension = extensionForMimeType(mediaBlob.type || recordedMimeType);
-      try {
-        uploadBlob = await convertBlobToWav(mediaBlob);
-        extension = "wav";
-      } catch {
-        uploadBlob = mediaBlob;
-      }
-      const fileName = `voice-feedback-${Date.now()}.${extension}`;
+      let uploadBlob = blob;
+      let uploadFilename = filename;
 
-      const prediction = await uploadAudioBlob(uploadBlob, timestamp, fileName);
+      if (convertToWav) {
+        const fallbackExtension = extensionForMimeType(blob?.type || "");
+        try {
+          uploadBlob = await convertBlobToWav(blob);
+          uploadFilename = `voice-feedback-${Date.now()}.wav`;
+        } catch {
+          uploadBlob = blob;
+          uploadFilename = filename || `voice-feedback-${Date.now()}.${fallbackExtension}`;
+        }
+      }
+
+      const prediction = await uploadAudioBlob(uploadBlob, timestamp, uploadFilename);
       console.debug("[MELD][Voice] upload processed", {
         lessonId,
         sessionId,
@@ -279,6 +276,31 @@ export default function AudioFeedbackRecorder({
     }
   }
 
+  async function finalizeRecording() {
+    clearTimers();
+    setIsRecording(false);
+
+    const seconds = recordingSecondsRef.current;
+    if (seconds < MIN_RECORD_SECONDS) {
+      setErrorText(`Please record at least ${MIN_RECORD_SECONDS} seconds.`);
+      setUploadState("failed");
+      stopStream();
+      return;
+    }
+
+    const recordedMimeType = recorderRef.current?.mimeType || chunksRef.current[0]?.type || "audio/webm";
+    const mediaBlob = new Blob(chunksRef.current, { type: recordedMimeType });
+    if (mediaBlob.size === 0) {
+      setErrorText("No audio captured. Please try recording again.");
+      setUploadState("failed");
+      stopStream();
+      return;
+    }
+
+    const extension = extensionForMimeType(mediaBlob.type || recordedMimeType);
+    await processVoiceUpload(mediaBlob, `voice-feedback-${Date.now()}.${extension}`, { convertToWav: true });
+  }
+
   function stopRecording() {
     if (!recorderRef.current || recorderRef.current.state !== "recording") {
       return;
@@ -292,8 +314,8 @@ export default function AudioFeedbackRecorder({
       setUploadState("failed");
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setErrorText("Audio recording is not supported in this browser.");
+    if (!liveRecordingSupported) {
+      setErrorText(getMicrophoneSupportIssue(getMediaSupportSnapshot(), { requireRecorder: true }));
       setUploadState("failed");
       return;
     }
@@ -305,6 +327,8 @@ export default function AudioFeedbackRecorder({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      setMicrophonePermissionState("granted");
+      setMicrophoneSupportIssue("");
 
       const mimeType = getPreferredMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -345,6 +369,7 @@ export default function AudioFeedbackRecorder({
       }, MAX_RECORD_SECONDS * 1000);
     } catch (error) {
       if (isPermissionDenied(error)) {
+        setMicrophonePermissionState("denied");
         setErrorText("Microphone permission denied. You can continue without voice tracking.");
       } else {
         setErrorText(error.message || "Unable to access microphone.");
@@ -355,21 +380,110 @@ export default function AudioFeedbackRecorder({
     }
   }
 
+  async function requestMicrophonePermission() {
+    if (!sessionId && !liveSessionId) {
+      setErrorText("Join a live class or start a session first before enabling microphone access.");
+      return false;
+    }
+
+    const supportIssue = getMicrophoneSupportIssue(getMediaSupportSnapshot(), { requireRecorder: false });
+    setMicrophoneSupportIssue(supportIssue);
+    if (supportIssue) {
+      setErrorText(supportIssue);
+      return false;
+    }
+
+    setIsRequestingPermission(true);
+    setErrorText("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicrophonePermissionState("granted");
+      setMicrophoneSupportIssue("");
+      onStatusMessage?.("Microphone permission granted. Start recording when you are ready.");
+      stream.getTracks().forEach((track) => track.stop());
+      return true;
+    } catch (error) {
+      if (isPermissionDenied(error)) {
+        setMicrophonePermissionState("denied");
+        setErrorText("Microphone permission denied. You can continue with text or uploaded audio.");
+      } else {
+        setErrorText(error.message || "Unable to access microphone.");
+      }
+      return false;
+    } finally {
+      setIsRequestingPermission(false);
+    }
+  }
+
+  async function handleAudioFileSelection(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    await processVoiceUpload(file, file.name || `voice-feedback-${Date.now()}.${extensionForMimeType(file.type)}`, {
+      convertToWav: false,
+    });
+  }
+
   useEffect(() => {
+    let cancelled = false;
+
+    async function refreshMicrophoneDiagnostics() {
+      const snapshot = getMediaSupportSnapshot();
+      const nextPermissionState = await queryMediaPermissionState("microphone");
+      if (cancelled) {
+        return;
+      }
+      setMicrophoneSupportIssue(getMicrophoneSupportIssue(snapshot, { requireRecorder: true }));
+      setMicrophonePermissionState(nextPermissionState);
+    }
+
+    void refreshMicrophoneDiagnostics();
+
     return () => {
+      cancelled = true;
       clearTimers();
       stopStream();
     };
-  }, []);
+  }, [sessionId, liveSessionId]);
 
   return (
     <div className="audio-recorder">
       <p className="small-note">Record 10-30 seconds of spoken feedback.</p>
+      {microphoneSupportIssue && (
+        <div className="inline-message inline-message-soft">{microphoneSupportIssue}</div>
+      )}
+      {microphonePermissionState === "granted" && !isRecording && (
+        <p className="small-note">Microphone ready. You can record now.</p>
+      )}
 
       <div className="audio-recorder__actions">
-        {!isRecording && (
+        {!isRecording && liveRecordingSupported && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void requestMicrophonePermission()}
+            disabled={isUploading || isRequestingPermission || (!sessionId && !liveSessionId)}
+          >
+            {isRequestingPermission ? "Checking Mic..." : "Allow Microphone"}
+          </button>
+        )}
+
+        {!isRecording && liveRecordingSupported && (
           <button type="button" onClick={startRecording} disabled={isUploading || (!sessionId && !liveSessionId)}>
             Record Feedback
+          </button>
+        )}
+
+        {!isRecording && (
+          <button
+            type="button"
+            className={liveRecordingSupported ? "secondary" : ""}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading || (!sessionId && !liveSessionId)}
+          >
+            Upload / Record Audio
           </button>
         )}
 
@@ -406,6 +520,16 @@ export default function AudioFeedbackRecorder({
       )}
 
       {errorText && <div className="inline-message inline-message-soft">{errorText}</div>}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        capture="user"
+        className="media-file-input"
+        onChange={(event) => {
+          void handleAudioFileSelection(event);
+        }}
+      />
     </div>
   );
 }

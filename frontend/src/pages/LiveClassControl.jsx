@@ -11,6 +11,28 @@ import {
 
 const ACTIVE_LIVE_STORAGE_KEY = "meld_active_live_session_id";
 
+function formatLiveControlError(message) {
+  const value = String(message || "").trim();
+  const normalized = value.toLowerCase();
+
+  if (normalized.includes("cannot connect to the backend api")) {
+    return value;
+  }
+  if (normalized.includes("failed to fetch") || normalized.includes("network error")) {
+    return "Cannot connect to the backend API. Make sure the backend server is running, then reload this page.";
+  }
+  if (normalized.includes("only students or teachers can access classes")) {
+    return "This account cannot access classes. Sign in with a teacher account to use live control.";
+  }
+  if (normalized.includes("not authenticated") || normalized.includes("401") || normalized.includes("not enough segments")) {
+    return "Your session is missing or expired. Sign out and sign in again.";
+  }
+  if (normalized.includes("403")) {
+    return "This teacher account does not have permission to open live control for the selected class.";
+  }
+  return value || "Unable to load live control.";
+}
+
 export default function LiveClassControl() {
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
@@ -34,11 +56,15 @@ export default function LiveClassControl() {
       setClasses(safeRows);
       const initialClass = safeRows[0]?.class_id || "";
       setSelectedClassId((current) => current || initialClass);
-      setMessage("");
+      setMessage(
+        safeRows.length === 0
+          ? "No teacher classes found yet. Create a class first, then come back to start a live session."
+          : ""
+      );
     } catch (error) {
       setClasses([]);
       setSelectedClassId("");
-      setMessage(error.message || "Unable to load classes.");
+      setMessage(formatLiveControlError(error.message));
     } finally {
       setIsLoadingClasses(false);
     }
@@ -60,11 +86,15 @@ export default function LiveClassControl() {
           ? current
           : String(safeRows[0]?.lesson_id || "")
       ));
-      setMessage("");
+      setMessage((current) => (
+        current.startsWith("No teacher classes found")
+          ? current
+          : ""
+      ));
     } catch (error) {
       setLessons([]);
       setSelectedLessonId("");
-      setMessage(error.message || "Unable to load class lessons.");
+      setMessage(formatLiveControlError(error.message || "Unable to load class lessons."));
     } finally {
       setIsLoadingLessons(false);
     }
@@ -80,7 +110,7 @@ export default function LiveClassControl() {
       setOverall(data || null);
     } catch (error) {
       setOverall(null);
-      setMessage(error.message || "Unable to fetch live analytics.");
+      setMessage(formatLiveControlError(error.message || "Unable to fetch live analytics."));
     }
   }
 
@@ -100,7 +130,7 @@ export default function LiveClassControl() {
       await refreshOverall(nextSessionId);
       setMessage(`Live class started. Session ID: ${nextSessionId}`);
     } catch (error) {
-      setMessage(error.message || "Unable to start live class.");
+      setMessage(formatLiveControlError(error.message || "Unable to start live class."));
     } finally {
       setIsStarting(false);
     }
@@ -118,7 +148,7 @@ export default function LiveClassControl() {
       localStorage.removeItem(ACTIVE_LIVE_STORAGE_KEY);
       setActiveSessionId("");
     } catch (error) {
-      setMessage(error.message || "Unable to end live class.");
+      setMessage(formatLiveControlError(error.message || "Unable to end live class."));
     } finally {
       setIsEnding(false);
     }
@@ -133,6 +163,19 @@ export default function LiveClassControl() {
       setMessage("Live session ID copied.");
     } catch {
       setMessage("Unable to copy session ID.");
+    }
+  }
+
+  async function handleCopyJoinLink() {
+    if (!activeSessionId) {
+      return;
+    }
+    try {
+      const joinUrl = `${window.location.origin}/student/live?session=${encodeURIComponent(activeSessionId)}`;
+      await navigator.clipboard.writeText(joinUrl);
+      setMessage("Student join link copied.");
+    } catch {
+      setMessage("Unable to copy student join link.");
     }
   }
 
@@ -220,13 +263,23 @@ export default function LiveClassControl() {
               <button type="button" className="danger" onClick={handleEndLiveClass} disabled={isEnding}>
                 {isEnding ? "Ending..." : "End Live Class"}
               </button>
-              <button type="button" className="secondary" onClick={handleCopySessionId}>
-                Copy Session ID
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => navigate(`/teacher/live/dashboard/${activeSessionId}`)}
+            <button type="button" className="secondary" onClick={handleCopySessionId}>
+              Copy Session ID
+            </button>
+            <button type="button" className="secondary" onClick={() => void handleCopyJoinLink()}>
+              Copy Join Link
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => navigate(`/teacher/live/room/${activeSessionId}`)}
+            >
+              Open Meeting Room
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => navigate(`/teacher/live/dashboard/${activeSessionId}`)}
               >
                 Open Live Dashboard
               </button>

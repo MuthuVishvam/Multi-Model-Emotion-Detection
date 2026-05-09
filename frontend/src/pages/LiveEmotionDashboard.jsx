@@ -20,6 +20,10 @@ import {
   fetchLiveStudentsAnalytics,
 } from "../services/api";
 import { CHART_AXIS_COLOR, CHART_GRID_COLOR, getChartColor } from "../chartColors";
+import EmotionFilterBar, {
+  buildEmotionFilterOptions,
+  formatEmotionLabel,
+} from "../components/EmotionFilterBar";
 
 function toDistributionData(percentages = {}, counts = {}) {
   const keys = Object.keys(percentages || {});
@@ -53,6 +57,7 @@ export default function LiveEmotionDashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [message, setMessage] = useState("");
+  const [selectedEmotion, setSelectedEmotion] = useState("");
 
   const overallPie = useMemo(
     () => toDistributionData(overall?.emotion_percentages || {}, overall?.emotion_counts || {}),
@@ -70,19 +75,31 @@ export default function LiveEmotionDashboard() {
     () => toDistributionData(voice?.emotion_percentages || {}, voice?.emotion_counts || {}),
     [voice]
   );
+  const emotionOptions = useMemo(
+    () => buildEmotionFilterOptions(
+      [
+        overall?.emotion_counts,
+        face?.emotion_counts,
+        text?.emotion_counts,
+        voice?.emotion_counts,
+      ],
+      selectedEmotion
+    ),
+    [overall, face, text, voice, selectedEmotion]
+  );
 
-  async function loadAnalytics() {
+  async function loadAnalytics(filters = {}) {
     if (!liveSessionId) {
       return;
     }
     setIsLoading(true);
     try {
       const [overallData, faceData, textData, voiceData, studentsData] = await Promise.all([
-        fetchLiveOverallAnalytics(liveSessionId),
-        fetchLiveModalityAnalytics(liveSessionId, "face"),
-        fetchLiveModalityAnalytics(liveSessionId, "text"),
-        fetchLiveModalityAnalytics(liveSessionId, "voice"),
-        fetchLiveStudentsAnalytics(liveSessionId),
+        fetchLiveOverallAnalytics(liveSessionId, filters),
+        fetchLiveModalityAnalytics(liveSessionId, "face", filters),
+        fetchLiveModalityAnalytics(liveSessionId, "text", filters),
+        fetchLiveModalityAnalytics(liveSessionId, "voice", filters),
+        fetchLiveStudentsAnalytics(liveSessionId, filters),
       ]);
       setOverall(overallData || null);
       setFace(faceData || null);
@@ -105,7 +122,7 @@ export default function LiveEmotionDashboard() {
     try {
       await endLiveClass(liveSessionId);
       setMessage("Live class ended. Showing summary.");
-      await loadAnalytics();
+      await loadAnalytics(selectedEmotion ? { emotionLabel: selectedEmotion } : {});
     } catch (error) {
       setMessage(error.message || "Unable to end live class.");
     } finally {
@@ -114,18 +131,18 @@ export default function LiveEmotionDashboard() {
   }
 
   useEffect(() => {
-    void loadAnalytics();
-  }, [liveSessionId]);
+    void loadAnalytics(selectedEmotion ? { emotionLabel: selectedEmotion } : {});
+  }, [liveSessionId, selectedEmotion]);
 
   useEffect(() => {
     if (!liveSessionId) {
       return undefined;
     }
     const timer = window.setInterval(() => {
-      void loadAnalytics();
+      void loadAnalytics(selectedEmotion ? { emotionLabel: selectedEmotion } : {});
     }, 10000);
     return () => window.clearInterval(timer);
-  }, [liveSessionId]);
+  }, [liveSessionId, selectedEmotion]);
 
   return (
     <div className="learning-page live-dashboard-page">
@@ -142,6 +159,21 @@ export default function LiveEmotionDashboard() {
           </button>
         </div>
         {message && <div className="inline-message inline-message-soft">{message}</div>}
+      </section>
+
+      <section className="card">
+        <EmotionFilterBar
+          selectedEmotion={selectedEmotion}
+          onSelectEmotion={setSelectedEmotion}
+          options={emotionOptions}
+          title="Live Emotion Focus"
+          description="Choose one emotion and the overall, face, text, voice, and student views will all refresh together."
+        />
+        <p className="small-note">
+          {selectedEmotion
+            ? `Showing live analytics for ${formatEmotionLabel(selectedEmotion)}.`
+            : "Showing live analytics for all captured emotions."}
+        </p>
       </section>
 
       <section className="live-room-metrics">

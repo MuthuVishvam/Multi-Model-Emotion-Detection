@@ -33,6 +33,7 @@ async def get_lesson_overall_analytics(
     class_id: str | None = Query(default=None),
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LessonOverallAnalyticsResponse:
     await _ensure_lesson_access(current_user, lesson_id, class_id)
@@ -41,6 +42,7 @@ async def get_lesson_overall_analytics(
         class_id=class_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LessonOverallAnalyticsResponse(**result)
 
@@ -51,6 +53,7 @@ async def get_lesson_face_analytics(
     class_id: str | None = Query(default=None),
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LessonModalityAnalyticsResponse:
     await _ensure_lesson_access(current_user, lesson_id, class_id)
@@ -60,6 +63,7 @@ async def get_lesson_face_analytics(
         class_id=class_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LessonModalityAnalyticsResponse(**result)
 
@@ -70,6 +74,7 @@ async def get_lesson_text_analytics(
     class_id: str | None = Query(default=None),
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LessonModalityAnalyticsResponse:
     await _ensure_lesson_access(current_user, lesson_id, class_id)
@@ -79,6 +84,7 @@ async def get_lesson_text_analytics(
         class_id=class_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LessonModalityAnalyticsResponse(**result)
 
@@ -89,6 +95,7 @@ async def get_lesson_voice_analytics(
     class_id: str | None = Query(default=None),
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LessonModalityAnalyticsResponse:
     await _ensure_lesson_access(current_user, lesson_id, class_id)
@@ -98,6 +105,7 @@ async def get_lesson_voice_analytics(
         class_id=class_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LessonModalityAnalyticsResponse(**result)
 
@@ -108,6 +116,7 @@ async def get_lesson_students_analytics(
     class_id: str | None = Query(default=None),
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     teacher_user: dict = Depends(require_teacher),
 ) -> LessonStudentsAnalyticsResponse:
     await _ensure_lesson_access(teacher_user, lesson_id, class_id=class_id)
@@ -116,6 +125,7 @@ async def get_lesson_students_analytics(
         class_id=class_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LessonStudentsAnalyticsResponse(**result)
 
@@ -124,12 +134,18 @@ async def get_lesson_students_analytics(
 async def get_lesson_progress_analytics(
     lesson_id: str,
     class_id: str | None = Query(default=None),
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     teacher_user: dict = Depends(require_teacher),
 ) -> LessonProgressAnalyticsResponse:
     await _ensure_lesson_access(teacher_user, lesson_id, class_id=class_id)
     result = await emotion_event_analytics_service.get_lesson_progress_analytics(
         lesson_id=lesson_id,
         class_id=class_id,
+        start_at=start_at,
+        end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LessonProgressAnalyticsResponse(**result)
 
@@ -139,6 +155,7 @@ async def get_live_overall_analytics(
     live_session_id: str,
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LiveOverallAnalyticsResponse:
     await live_class_service.get_live_class_for_user(
@@ -149,6 +166,7 @@ async def get_live_overall_analytics(
         live_session_id=live_session_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LiveOverallAnalyticsResponse(**result)
 
@@ -158,6 +176,7 @@ async def get_live_face_analytics(
     live_session_id: str,
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LiveModalityAnalyticsResponse:
     await live_class_service.get_live_class_for_user(
@@ -169,6 +188,7 @@ async def get_live_face_analytics(
         modality="face",
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LiveModalityAnalyticsResponse(**result)
 
@@ -178,6 +198,7 @@ async def get_live_text_analytics(
     live_session_id: str,
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LiveModalityAnalyticsResponse:
     await live_class_service.get_live_class_for_user(
@@ -189,6 +210,7 @@ async def get_live_text_analytics(
         modality="text",
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LiveModalityAnalyticsResponse(**result)
 
@@ -198,6 +220,7 @@ async def get_live_voice_analytics(
     live_session_id: str,
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ) -> LiveModalityAnalyticsResponse:
     await live_class_service.get_live_class_for_user(
@@ -209,6 +232,7 @@ async def get_live_voice_analytics(
         modality="voice",
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LiveModalityAnalyticsResponse(**result)
 
@@ -218,6 +242,7 @@ async def get_live_students_analytics(
     live_session_id: str,
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
+    emotion_label: str | None = Query(default=None),
     teacher_user: dict = Depends(require_teacher),
 ) -> LiveStudentsAnalyticsResponse:
     await live_class_service.get_live_class_for_user(
@@ -228,5 +253,6 @@ async def get_live_students_analytics(
         live_session_id=live_session_id,
         start_at=start_at,
         end_at=end_at,
+        emotion_label=emotion_label,
     )
     return LiveStudentsAnalyticsResponse(**result)

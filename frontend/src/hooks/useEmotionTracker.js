@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 
 import { apiRequest } from "../services/api";
+import {
+  getCameraSupportIssue,
+  getMediaSupportSnapshot,
+  queryMediaPermissionState,
+} from "../services/mediaSupport";
 
 const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 const DETECTION_INTERVAL_MS = 2000;
@@ -109,6 +114,23 @@ function sleep(ms) {
   });
 }
 
+function loadImageElementFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Unable to read the selected image."));
+    };
+    image.src = objectUrl;
+  });
+}
+
 export default function useEmotionTracker({
   userId,
   courseId,
@@ -148,9 +170,13 @@ export default function useEmotionTracker({
   const [lastConfidence, setLastConfidence] = useState(0);
   const [flushError, setFlushError] = useState("");
   const [cameraState, setCameraState] = useState("off");
+  const [cameraPermissionState, setCameraPermissionState] = useState("unknown");
+  const [cameraSupportIssue, setCameraSupportIssue] = useState("");
   const [faceDetectionState, setFaceDetectionState] = useState("not_detected");
   const [faceEventsSent, setFaceEventsSent] = useState(0);
   const [hasFaceCapture, setHasFaceCapture] = useState(false);
+  const [isRequestingCamera, setIsRequestingCamera] = useState(false);
+  const [isAnalyzingFaceImage, setIsAnalyzingFaceImage] = useState(false);
   const [faceStats, setFaceStats] = useState({
     userId: userId || "",
     trackerActive: false,
@@ -176,6 +202,26 @@ export default function useEmotionTracker({
   useEffect(() => {
     permissionDeniedRef.current = permissionDenied;
   }, [permissionDenied]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshCameraDiagnostics() {
+      const snapshot = getMediaSupportSnapshot();
+      const nextPermissionState = await queryMediaPermissionState("camera");
+      if (cancelled) {
+        return;
+      }
+      setCameraSupportIssue(getCameraSupportIssue(snapshot));
+      setCameraPermissionState(nextPermissionState);
+    }
+
+    void refreshCameraDiagnostics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [permissionDenied, userId, sessionId, liveSessionId]);
 
   function queueFaceEvent({ emotionLabel, confidence, extra }) {
     const meta = metadataRef.current;
@@ -264,8 +310,12 @@ export default function useEmotionTracker({
   }
 
   async function ensureCameraReady() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setStatusText("Camera not supported. Continuing without tracking.");
+    const snapshot = getMediaSupportSnapshot();
+    const supportIssue = getCameraSupportIssue(snapshot);
+    setCameraSupportIssue(supportIssue);
+
+    if (supportIssue) {
+      setStatusText(supportIssue);
       setCameraState("off");
       return false;
     }
@@ -309,7 +359,9 @@ export default function useEmotionTracker({
 
         streamRef.current = stream;
         setPermissionDenied(false);
+        setCameraPermissionState("granted");
         setCameraState("on");
+        setCameraSupportIssue("");
         setStatusText("Emotion tracking ON");
         console.debug("[MELD][Camera] started", {
           attempt: attempt + 1,
@@ -320,6 +372,7 @@ export default function useEmotionTracker({
         lastError = error;
         if (isPermissionDeniedError(error)) {
           setPermissionDenied(true);
+          setCameraPermissionState("denied");
           setCameraState("off");
           setStatusText("Camera permission denied. Lesson continues without tracking.");
           setTrackingActive(false);
@@ -335,6 +388,30 @@ export default function useEmotionTracker({
     setCameraState("off");
     setStatusText(`Camera error: ${lastError?.message || "Unable to access camera"}`);
     return false;
+  }
+
+  async function requestCameraPermission() {
+    setIsRequestingCamera(true);
+    setPermissionDenied(false);
+    permissionDeniedRef.current = false;
+
+    try {
+      const cameraReady = await ensureCameraReady();
+      if (!cameraReady) {
+        return false;
+      }
+
+      setStatusText("Camera permission granted. Start playback to begin live face tracking.");
+      if (!trackingActive) {
+        stopCamera();
+      }
+      return true;
+    } finally {
+      setIsRequestingCamera(false);
+      const snapshot = getMediaSupportSnapshot();
+      setCameraSupportIssue(getCameraSupportIssue(snapshot));
+      setCameraPermissionState(await queryMediaPermissionState("camera"));
+    }
   }
 
   function stopCamera() {
@@ -355,6 +432,82 @@ export default function useEmotionTracker({
     }
     stopCamera();
     setStatusText((prev) => (trackingEnabledRef.current ? prev : "Emotion tracking OFF"));
+  }
+
+  async function captureFaceFromImage(file) {
+    const meta = metadataRef.current;
+    if (!file) {
+      return null;
+    }
+    if (!meta.userId || (!meta.sessionId && !meta.liveSessionId)) {
+      setStatusText("Start a lesson session or join a live class before uploading a face capture.");
+      return null;
+    }
+
+    setIsAnalyzingFaceImage(true);
+    try {
+      await ensureModelsLoaded();
+      const image = await loadImageElementFromFile(file);
+      const detections = await faceapi
+        .detectAllFaces(image, new faceapi.TinyFaceDetectorOptions())
+        .withFaceExpressions();
+      const facesCount = Array.isArray(detections) ? detections.length : 0;
+
+      if (facesCount === 0) {
+        queueFaceEvent({
+          emotionLabel: "no_face_detected",
+          confidence: 0,
+          extra: {
+            face_detected: false,
+            faces_count: 0,
+            upload_source: "manual_image",
+          },
+        });
+        await flushQueue();
+        setFaceDetectionState("not_detected");
+        setLastEmotion("no_face_detected");
+        setLastConfidence(0);
+        setStatusText("No face detected in the uploaded image.");
+        return {
+          emotion: "no_face_detected",
+          confidence: 0,
+          facesCount: 0,
+        };
+      }
+
+      const top = getTopExpressionFromDetections(detections);
+      if (!top) {
+        setStatusText("A face was found, but no expression could be classified from this image.");
+        return null;
+      }
+
+      const confidence = Number(top.confidence.toFixed(4));
+      queueFaceEvent({
+        emotionLabel: top.emotion,
+        confidence,
+        extra: {
+          face_detected: true,
+          faces_count: facesCount,
+          upload_source: "manual_image",
+        },
+      });
+      await flushQueue();
+      setHasFaceCapture(true);
+      setFaceDetectionState("running");
+      setLastEmotion(top.emotion);
+      setLastConfidence(confidence);
+      setStatusText(`Face image processed: ${top.emotion} (${Math.round(confidence * 100)}%).`);
+      return {
+        emotion: top.emotion,
+        confidence,
+        facesCount,
+      };
+    } catch (error) {
+      setStatusText(error?.message || "Unable to analyze the selected face image.");
+      return null;
+    } finally {
+      setIsAnalyzingFaceImage(false);
+    }
   }
 
   async function startDetectionLoop() {
@@ -592,8 +745,15 @@ export default function useEmotionTracker({
     flushError,
     faceStats,
     cameraState,
+    cameraPermissionState,
+    cameraSupportIssue,
     faceDetectionState,
     faceEventsSent,
     hasFaceCapture,
+    isRequestingCamera,
+    isAnalyzingFaceImage,
+    canLogFaceEvents: Boolean(userId && (sessionId || liveSessionId)),
+    requestCameraPermission,
+    captureFaceFromImage,
   };
 }

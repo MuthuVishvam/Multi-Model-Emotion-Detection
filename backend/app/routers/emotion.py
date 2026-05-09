@@ -238,8 +238,6 @@ async def detect_text_emotion_for_message(
             live_session_id=live_session_id,
             current_user=current_user,
         )
-        if live_class.get("status") == "ended":
-            raise HTTPException(status_code=400, detail="Live class has ended")
         if not class_id:
             class_id = (live_class.get("class_id") or "").strip() or None
         if not lesson_id:

@@ -100,6 +100,11 @@ def _build_attention_summary_text(percentages: dict[str, float]) -> str:
     return ", ".join(parts)
 
 
+def _normalize_emotion_label(value: str | None) -> str | None:
+    normalized = str(value or "").strip().lower()
+    return normalized or None
+
+
 class EmotionEventAnalyticsService:
     @staticmethod
     def _build_time_query(start_at: datetime | None, end_at: datetime | None) -> dict[str, datetime]:
@@ -124,12 +129,16 @@ class EmotionEventAnalyticsService:
         class_id: str | None = None,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         match_query: dict = {"lesson_id": lesson_id}
         if modality:
             match_query["modality"] = modality
         if class_id:
             match_query["class_id"] = class_id
+        normalized_emotion_label = _normalize_emotion_label(emotion_label)
+        if normalized_emotion_label:
+            match_query["emotion_label"] = normalized_emotion_label
 
         timestamp_query = cls._build_time_query(start_at, end_at)
         if timestamp_query:
@@ -149,6 +158,13 @@ class EmotionEventAnalyticsService:
         if timestamp_query:
             match_query["timestamp"] = timestamp_query
         return match_query
+
+    @staticmethod
+    def _apply_user_scope(match_query: dict, user_ids: set[str] | None) -> dict:
+        scoped_match = dict(match_query)
+        if user_ids is not None:
+            scoped_match["user_id"] = {"$in": sorted(user_ids)}
+        return scoped_match
 
     @staticmethod
     def _timeline_pipeline(match_query: dict) -> list[dict]:
@@ -248,6 +264,16 @@ class EmotionEventAnalyticsService:
                 mapping[username] = display_name
         return mapping
 
+    @staticmethod
+    async def _resolve_user_scope(match_query: dict) -> set[str]:
+        rows = await db.emotion_events.aggregate(
+            [
+                {"$match": match_query},
+                {"$group": {"_id": "$user_id"}},
+            ]
+        ).to_list(length=None)
+        return {str(row.get("_id")) for row in rows if row.get("_id")}
+
     async def ingest_emotion_events(self, *, events: list[dict], current_user: dict) -> dict:
         if not events:
             return {"inserted_count": 0, "skipped_count": 0}
@@ -332,6 +358,7 @@ class EmotionEventAnalyticsService:
         class_id: str | None = None,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         match_query = self._emotion_match(
             lesson_id=lesson_id,
@@ -339,6 +366,7 @@ class EmotionEventAnalyticsService:
             class_id=class_id,
             start_at=start_at,
             end_at=end_at,
+            emotion_label=emotion_label,
         )
 
         emotion_counts_rows, timeline_rows = await asyncio.gather(
@@ -461,18 +489,25 @@ class EmotionEventAnalyticsService:
         class_id: str | None = None,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         emotion_match = self._emotion_match(
             lesson_id=lesson_id,
             class_id=class_id,
             start_at=start_at,
             end_at=end_at,
+            emotion_label=emotion_label,
         )
         attention_match = self._attention_match(
             lesson_id=lesson_id,
             start_at=start_at,
             end_at=end_at,
         )
+        if emotion_label:
+            attention_match = self._apply_user_scope(
+                attention_match,
+                await self._resolve_user_scope(emotion_match),
+            )
 
         modality_rows, emotion_rows, attention_rows = await asyncio.gather(
             db.emotion_events.aggregate(self._modality_counts_pipeline(emotion_match)).to_list(length=None),
@@ -547,10 +582,14 @@ class EmotionEventAnalyticsService:
         modality: str | None = None,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         match_query: dict = {"live_session_id": live_session_id}
         if modality:
             match_query["modality"] = modality
+        normalized_emotion_label = _normalize_emotion_label(emotion_label)
+        if normalized_emotion_label:
+            match_query["emotion_label"] = normalized_emotion_label
         timestamp_query = cls._build_time_query(start_at, end_at)
         if timestamp_query:
             match_query["timestamp"] = timestamp_query
@@ -577,12 +616,14 @@ class EmotionEventAnalyticsService:
         modality: str,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         match_query = self._live_emotion_match(
             live_session_id=live_session_id,
             modality=modality,
             start_at=start_at,
             end_at=end_at,
+            emotion_label=emotion_label,
         )
 
         emotion_counts_rows, timeline_rows = await asyncio.gather(
@@ -701,17 +742,24 @@ class EmotionEventAnalyticsService:
         live_session_id: str,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         emotion_match = self._live_emotion_match(
             live_session_id=live_session_id,
             start_at=start_at,
             end_at=end_at,
+            emotion_label=emotion_label,
         )
         attention_match = self._live_attention_match(
             live_session_id=live_session_id,
             start_at=start_at,
             end_at=end_at,
         )
+        if emotion_label:
+            attention_match = self._apply_user_scope(
+                attention_match,
+                await self._resolve_user_scope(emotion_match),
+            )
 
         live_class, modality_rows, emotion_rows, attention_rows, active_students_count, attention_user_rows = await asyncio.gather(
             db.live_classes.find_one({"live_session_id": live_session_id}),
@@ -826,11 +874,13 @@ class EmotionEventAnalyticsService:
         live_session_id: str,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         emotion_match = self._live_emotion_match(
             live_session_id=live_session_id,
             start_at=start_at,
             end_at=end_at,
+            emotion_label=emotion_label,
         )
         attention_match = self._live_attention_match(
             live_session_id=live_session_id,
@@ -894,6 +944,8 @@ class EmotionEventAnalyticsService:
             emotion_by_user.setdefault(user_id, {})
             emotion_by_user[user_id][emotion] = _safe_int(row.get("count"))
 
+        user_scope = set(emotion_by_user.keys()) if emotion_label else None
+
         modality_emotions_by_user: dict[str, dict[str, dict[str, int]]] = {}
         for row in modality_emotion_rows:
             key = row.get("_id") or {}
@@ -901,6 +953,8 @@ class EmotionEventAnalyticsService:
             modality = str(key.get("modality") or "")
             emotion = str(key.get("emotion") or "")
             if not user_id or not modality or not emotion or user_id == teacher_id:
+                continue
+            if user_scope is not None and user_id not in user_scope:
                 continue
             modality_emotions_by_user.setdefault(user_id, {})
             modality_emotions_by_user[user_id].setdefault(modality, {})
@@ -910,6 +964,8 @@ class EmotionEventAnalyticsService:
         for row in emotion_span_rows:
             user_id = str(row.get("_id") or "")
             if not user_id or user_id == teacher_id:
+                continue
+            if user_scope is not None and user_id not in user_scope:
                 continue
             emotion_span_by_user[user_id] = {
                 "min_ts": row.get("min_ts"),
@@ -923,6 +979,8 @@ class EmotionEventAnalyticsService:
             state = str(key.get("state") or "")
             if not user_id or not state or user_id == teacher_id:
                 continue
+            if user_scope is not None and user_id not in user_scope:
+                continue
             attention_by_user.setdefault(user_id, {})
             attention_by_user[user_id][state] = _safe_int(row.get("count"))
 
@@ -930,6 +988,8 @@ class EmotionEventAnalyticsService:
         for row in face_no_face_rows:
             user_id = str(row.get("_id") or "")
             if not user_id or user_id == teacher_id:
+                continue
+            if user_scope is not None and user_id not in user_scope:
                 continue
             face_no_face_by_user[user_id] = _safe_int(row.get("count"))
 
@@ -939,6 +999,8 @@ class EmotionEventAnalyticsService:
             user_id = str(row.get("user_id") or "")
             role = str(row.get("role") or "")
             if not user_id or role != "student" or user_id == teacher_id:
+                continue
+            if user_scope is not None and user_id not in user_scope:
                 continue
 
             watch_time = _safe_int(row.get("watch_time_seconds"))
@@ -1040,12 +1102,14 @@ class EmotionEventAnalyticsService:
         class_id: str | None = None,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        emotion_label: str | None = None,
     ) -> dict:
         emotion_match = self._emotion_match(
             lesson_id=lesson_id,
             class_id=class_id,
             start_at=start_at,
             end_at=end_at,
+            emotion_label=emotion_label,
         )
         attention_match = self._attention_match(
             lesson_id=lesson_id,
@@ -1247,6 +1311,8 @@ class EmotionEventAnalyticsService:
             emotion_by_user.setdefault(user_id, {})
             emotion_by_user[user_id][emotion] = _safe_int(row.get("count"))
 
+        user_scope = set(emotion_by_user.keys()) if emotion_label else None
+
         modality_emotions_by_user: dict[str, dict[str, dict[str, int]]] = {}
         for row in modality_emotion_rows:
             key = row.get("_id") or {}
@@ -1256,6 +1322,8 @@ class EmotionEventAnalyticsService:
             if not raw_user or not modality or not emotion:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             modality_emotions_by_user.setdefault(user_id, {})
             modality_emotions_by_user[user_id].setdefault(modality, {})
             modality_emotions_by_user[user_id][modality][emotion] = _safe_int(row.get("count"))
@@ -1266,6 +1334,8 @@ class EmotionEventAnalyticsService:
             if not raw_user:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             span_by_user[user_id] = {
                 "min_ts": row.get("min_ts"),
                 "max_ts": row.get("max_ts"),
@@ -1280,6 +1350,8 @@ class EmotionEventAnalyticsService:
             if not raw_user or not state:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             attention_by_user.setdefault(user_id, {})
             attention_by_user[user_id][state] = _safe_int(row.get("count"))
 
@@ -1288,14 +1360,20 @@ class EmotionEventAnalyticsService:
             raw_user = row.get("_id")
             if not raw_user:
                 continue
-            no_face_from_face_events[str(raw_user)] = _safe_int(row.get("count"))
+            user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
+            no_face_from_face_events[user_id] = _safe_int(row.get("count"))
 
         watch_seconds_by_user: dict[str, int] = {}
         for row in attention_watch_rows:
             raw_user = row.get("_id")
             if not raw_user:
                 continue
-            watch_seconds_by_user[str(raw_user)] = max(0, _safe_int(row.get("watch_seconds")))
+            user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
+            watch_seconds_by_user[user_id] = max(0, _safe_int(row.get("watch_seconds")))
 
         attention_last_seen: dict[str, datetime] = {}
         for row in attention_last_rows:
@@ -1303,7 +1381,10 @@ class EmotionEventAnalyticsService:
             max_ts = row.get("max_ts")
             if not raw_user or not isinstance(max_ts, datetime):
                 continue
-            attention_last_seen[str(raw_user)] = max_ts
+            user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
+            attention_last_seen[user_id] = max_ts
 
         timeline_by_user: dict[str, dict[str, dict]] = {}
         for row in emotion_timeline_rows:
@@ -1315,6 +1396,8 @@ class EmotionEventAnalyticsService:
             if not raw_user or not minute or not emotion:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             timeline_by_user.setdefault(user_id, {})
             timeline_by_user[user_id].setdefault(
                 minute,
@@ -1339,6 +1422,8 @@ class EmotionEventAnalyticsService:
             if not raw_user or not minute or not state:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             timeline_by_user.setdefault(user_id, {})
             timeline_by_user[user_id].setdefault(
                 minute,
@@ -1360,6 +1445,8 @@ class EmotionEventAnalyticsService:
             if not raw_user:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             comment = _extract_text_comment(row.get("extra") or {})
             if not comment:
                 continue
@@ -1381,6 +1468,8 @@ class EmotionEventAnalyticsService:
             if not raw_user:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             extra = row.get("extra") or {}
             feedback = _extract_text_comment(extra) or "Voice feedback sample"
             voice_by_user.setdefault(user_id, [])
@@ -1402,6 +1491,8 @@ class EmotionEventAnalyticsService:
             if not raw_user:
                 continue
             user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
             existing = progress_by_user.get(user_id)
             candidate_updated = _as_utc(row.get("updated_at")) or _utc_now()
             existing_updated = _as_utc((existing or {}).get("updated_at")) if existing else None
@@ -1413,7 +1504,10 @@ class EmotionEventAnalyticsService:
             raw_user = row.get("user_id")
             if not raw_user:
                 continue
-            completion_by_user[str(raw_user)] = bool(row.get("completed", True))
+            user_id = str(raw_user)
+            if user_scope is not None and user_id not in user_scope:
+                continue
+            completion_by_user[user_id] = bool(row.get("completed", True))
 
         all_user_ids = sorted(
             {
@@ -1568,34 +1662,76 @@ class EmotionEventAnalyticsService:
         students.sort(key=lambda item: item.get("watch_time_seconds", 0), reverse=True)
         return {"lesson_id": lesson_id, "students": students}
 
-    async def get_lesson_progress_analytics(self, *, lesson_id: str, class_id: str | None = None) -> dict:
+    async def get_lesson_progress_analytics(
+        self,
+        *,
+        lesson_id: str,
+        class_id: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        emotion_label: str | None = None,
+    ) -> dict:
         progress_match = {"lesson_id": lesson_id}
         if class_id:
             progress_match["class_id"] = class_id
+
+        progress_user_scope: set[str] | None = None
+        if start_at or end_at or emotion_label:
+            progress_user_scope = await self._resolve_user_scope(
+                self._emotion_match(
+                    lesson_id=lesson_id,
+                    class_id=class_id,
+                    start_at=start_at,
+                    end_at=end_at,
+                    emotion_label=emotion_label,
+                )
+            )
+
+        no_face_match = {
+            "lesson_id": lesson_id,
+            "state": {"$in": ["no_face", "no_face_detected"]},
+        }
+        timestamp_query = self._build_time_query(start_at, end_at)
+        if timestamp_query:
+            no_face_match["timestamp"] = timestamp_query
+        no_face_match = self._apply_user_scope(no_face_match, progress_user_scope)
+
+        no_face_emotion_match = {
+            "lesson_id": lesson_id,
+            "modality": "face",
+            "emotion_label": "no_face_detected",
+            **({"class_id": class_id} if class_id else {}),
+        }
+        if timestamp_query:
+            no_face_emotion_match["timestamp"] = timestamp_query
+        no_face_emotion_match = self._apply_user_scope(no_face_emotion_match, progress_user_scope)
 
         progress_rows, completion_rows, no_face_rows, no_face_emotion_rows = await asyncio.gather(
             db.lesson_progress.find(progress_match, {"_id": 0}).to_list(length=None),
             db.lesson_completions.find({**progress_match, "completed": True}, {"_id": 0, "user_id": 1}).to_list(length=None),
             db.attention_events.aggregate(
                 [
-                    {"$match": {"lesson_id": lesson_id, "state": {"$in": ["no_face", "no_face_detected"]}}},
+                    {"$match": no_face_match},
                     {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
                 ]
             ).to_list(length=None),
             db.emotion_events.aggregate(
                 [
-                    {
-                        "$match": {
-                            "lesson_id": lesson_id,
-                            "modality": "face",
-                            "emotion_label": "no_face_detected",
-                            **({"class_id": class_id} if class_id else {}),
-                        }
-                    },
+                    {"$match": no_face_emotion_match},
                     {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
                 ]
             ).to_list(length=None),
         )
+
+        if progress_user_scope is not None:
+            progress_rows = [
+                row for row in progress_rows
+                if str(row.get("user_id") or "") in progress_user_scope
+            ]
+            completion_rows = [
+                row for row in completion_rows
+                if str(row.get("user_id") or "") in progress_user_scope
+            ]
 
         completion_user_ids = {str(row.get("user_id")) for row in completion_rows if row.get("user_id")}
         no_face_map: dict[str, int] = {}

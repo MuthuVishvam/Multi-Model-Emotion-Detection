@@ -1,3 +1,5 @@
+import { getStoredToken } from "./tokenStorage.js";
+
 function normalizeApiBaseUrl(rawUrl = "") {
   const value = String(rawUrl || "").trim();
   if (!value) {
@@ -11,8 +13,13 @@ function getRuntimeDefaultApiBaseUrl() {
     return "";
   }
   const host = String(window.location?.hostname || "").toLowerCase();
+  const protocol = String(window.location?.protocol || "http:");
+  const port = String(window.location?.port || "");
   if (host === "localhost" || host === "127.0.0.1") {
     return "http://localhost:8000";
+  }
+  if (port === "5173" || port === "4173") {
+    return `${protocol}//${host}:8000`;
   }
   return "";
 }
@@ -21,12 +28,12 @@ export const API_BASE_URL = normalizeApiBaseUrl(
   import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || getRuntimeDefaultApiBaseUrl()
 );
 
-function buildApiUrl(path) {
+export function buildApiUrl(path) {
   const safePath = String(path || "").startsWith("/") ? String(path || "") : `/${String(path || "")}`;
   return API_BASE_URL ? `${API_BASE_URL}${safePath}` : safePath;
 }
 
-function formatErrorDetail(detail, fallback = "Request failed") {
+export function formatErrorDetail(detail, fallback = "Request failed") {
   if (typeof detail === "string" && detail.trim()) {
     return detail;
   }
@@ -71,6 +78,26 @@ function formatErrorDetail(detail, fallback = "Request failed") {
   return fallback;
 }
 
+function normalizeRequestErrorMessage(error, fallback = "Network error") {
+  if (error?.name === "AbortError") {
+    return "Request timed out. Please try again.";
+  }
+
+  const rawMessage = String(error?.message || "").trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (
+    normalizedMessage === "failed to fetch"
+    || normalizedMessage.includes("networkerror")
+    || normalizedMessage.includes("load failed")
+    || normalizedMessage.includes("fetch")
+  ) {
+    return "Cannot connect to the backend API. Make sure the backend server is running on http://localhost:8000.";
+  }
+
+  return rawMessage || fallback;
+}
+
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -112,10 +139,7 @@ export async function apiRequest(path, method = "GET", body = null, token = "", 
       if (!isLastAttempt) {
         continue;
       }
-      if (error?.name === "AbortError") {
-        throw new Error("Request timed out. Please try again.");
-      }
-      throw new Error(error?.message || "Network error");
+      throw new Error(normalizeRequestErrorMessage(error));
     }
   }
 
@@ -169,10 +193,7 @@ export async function apiMultipartRequest(path, method = "POST", formData, token
       if (!isLastAttempt) {
         continue;
       }
-      if (error?.name === "AbortError") {
-        throw new Error("Request timed out. Please try again.");
-      }
-      throw new Error(error?.message || "Network error");
+      throw new Error(normalizeRequestErrorMessage(error));
     }
   }
 
@@ -199,7 +220,7 @@ export async function apiMultipartRequest(path, method = "POST", formData, token
 }
 
 export async function fetchCurrentUser() {
-  const token = localStorage.getItem("token") || "";
+  const token = getStoredToken();
   if (!token) {
     return null;
   }
@@ -287,7 +308,7 @@ export async function joinClassByCode(joinCode) {
 }
 
 export async function fetchMyClasses() {
-  const token = localStorage.getItem("token") || "";
+  const token = getStoredToken();
   return apiRequest("/classes/my", "GET", null, token);
 }
 
@@ -354,7 +375,7 @@ export async function assignLessonToClasses(lessonId, payload) {
 }
 
 export async function fetchClassLessons(classId) {
-  const token = localStorage.getItem("token") || "";
+  const token = getStoredToken();
   return apiRequest(`/classes/${classId}/lessons`, "GET", null, token);
 }
 
@@ -364,7 +385,7 @@ export async function fetchLessonById(lessonId, classId = "") {
   return apiRequest(`/lessons/${lessonId}${suffix}`, "GET", null, token);
 }
 
-function buildAnalyticsQuery({ classId = "", startAt = "", endAt = "" } = {}) {
+function buildAnalyticsQuery({ classId = "", startAt = "", endAt = "", emotionLabel = "" } = {}) {
   const params = new URLSearchParams();
   if (classId) {
     params.set("class_id", classId);
@@ -374,6 +395,9 @@ function buildAnalyticsQuery({ classId = "", startAt = "", endAt = "" } = {}) {
   }
   if (endAt) {
     params.set("end_at", endAt);
+  }
+  if (emotionLabel) {
+    params.set("emotion_label", emotionLabel);
   }
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -433,12 +457,12 @@ export async function fetchLessonVoiceFeedback({ lessonId, classId = "", limit =
 }
 
 export async function startLiveClass(payload) {
-  const token = localStorage.getItem("token") || "";
+  const token = getStoredToken();
   return apiRequest("/live-classes/start", "POST", payload, token);
 }
 
 export async function endLiveClass(liveSessionId) {
-  const token = localStorage.getItem("token") || "";
+  const token = getStoredToken();
   return apiRequest(`/live-classes/${liveSessionId}/end`, "POST", null, token);
 }
 
@@ -457,7 +481,7 @@ export async function fetchLiveClass(liveSessionId) {
   return apiRequest(`/live-classes/${liveSessionId}`, "GET", null, token);
 }
 
-function buildLiveAnalyticsQuery({ startAt = "", endAt = "" } = {}) {
+function buildLiveAnalyticsQuery({ startAt = "", endAt = "", emotionLabel = "" } = {}) {
   const params = new URLSearchParams();
   if (startAt) {
     params.set("start_at", startAt);
@@ -465,12 +489,15 @@ function buildLiveAnalyticsQuery({ startAt = "", endAt = "" } = {}) {
   if (endAt) {
     params.set("end_at", endAt);
   }
+  if (emotionLabel) {
+    params.set("emotion_label", emotionLabel);
+  }
   const query = params.toString();
   return query ? `?${query}` : "";
 }
 
 export async function fetchLiveOverallAnalytics(liveSessionId, filters = {}) {
-  const token = localStorage.getItem("token") || "";
+  const token = getStoredToken();
   const query = buildLiveAnalyticsQuery(filters);
   return apiRequest(`/analytics/live/${liveSessionId}/overall${query}`, "GET", null, token);
 }

@@ -1,111 +1,184 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 
-import { fetchCurrentUser, loginUser } from "../services/api";
+import { getGoogleAuthUrl } from "../api/authApi";
+import AuthLayout from "../components/AuthLayout";
+import OAuthButton from "../components/OAuthButton";
+import useAuth from "../hooks/useAuth";
 
-function mapLoginError(message) {
-  const value = String(message || "").toLowerCase();
-  if (value.includes("failed to fetch") || value.includes("network error") || value.includes("timed out")) {
-    return "Cannot connect to backend API. Start backend and verify VITE_API_URL.";
-  }
-  if (value.includes("request failed (404)") || value.includes("request failed (502)") || value.includes("request failed (503)")) {
-    return "Backend API endpoint is unavailable. Check backend URL and deployment.";
-  }
-  if (value.includes("invalid credentials")) {
-    return "Invalid credentials. Check email and password.";
-  }
-  if (value.includes("pending")) {
-    return "Account pending admin approval.";
-  }
-  if (value.includes("rejected")) {
-    return "Account rejected by admin.";
-  }
-  if (value.includes("disabled")) {
-    return "Account disabled by admin.";
-  }
-  return message || "Login failed. Please try again.";
+const INPUT_CLASS =
+  "mt-1.5 w-full rounded-xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:bg-white";
+
+function Spinner() {
+  return (
+    <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" className="fill-none stroke-white/30" strokeWidth="4" />
+      <path className="fill-none stroke-white" strokeWidth="4" strokeLinecap="round" d="M22 12a10 10 0 0 0-10-10" />
+    </svg>
+  );
 }
 
-export default function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState("");
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const { login, isLoading } = useAuth();
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [errorText, setErrorText] = useState("");
 
-  async function completeLogin(token) {
-    localStorage.setItem("token", token);
-    const profile = await fetchCurrentUser();
-    if (!profile) {
-      throw new Error("Unable to load user profile");
+  useEffect(() => {
+    if (errorText) {
+      setErrorText("");
     }
-    onLogin(profile);
-  }
+  }, [identifier, password]);
 
-  async function handleLogin(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    setBusy(true);
-    setError("");
+    setErrorText("");
+
     try {
-      const data = await loginUser({ email: email.trim().toLowerCase(), password });
-      await completeLogin(data.access_token);
-    } catch (err) {
-      setError(mapLoginError(err.message));
-    } finally {
-      setBusy(false);
+      await login({ identifier, password });
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setErrorText(error.message || "Invalid credentials");
     }
   }
+
+  async function handleGoogleSignIn() {
+    setErrorText("");
+
+    try {
+      const response = await fetch(getGoogleAuthUrl(), {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.url) {
+        window.location.assign(payload.url);
+        return;
+      }
+
+      throw new Error("Google sign-in is not configured yet.");
+    } catch (error) {
+      setErrorText(error.message || "Google sign-in is not configured yet.");
+    }
+  }
+
+  const heroFeatures = [
+    "AI-powered student engagement tracking",
+    "Personalized learning analytics dashboard",
+    "Secure student, teacher, and admin portals",
+    "Real-time emotion and attention insights",
+    "Smart classroom performance monitoring",
+    "Teacher approval and verification system",
+  ];
 
   return (
-    <section className="auth-layout">
-      <article className="card auth-hero auth-hero--login">
-        <p className="eyebrow">Emotion-Based Learning Platform</p>
-        <h2>Learn smarter with real-time emotion insights</h2>
-        <p>
-          Track engagement, manage classes, and deliver adaptive lessons through one modern learning workspace.
-        </p>
-        <ul className="auth-hero__list">
-          <li>Student and teacher role-based portals</li>
-          <li>Multi-modal emotion analytics dashboards</li>
-          <li>Admin-controlled teacher verification flow</li>
-        </ul>
-      </article>
+    <AuthLayout
+      heroLabel="SMART AI LEARNING PLATFORM"
+      heroTitle="Transform Learning Through Emotion Intelligence"
+      heroDescription="Empower students and educators with AI-driven insights that improve engagement, monitor learning behavior, and create personalized educational experiences in real time."
+      heroFeatures={heroFeatures}
+    >
+      <div className="mb-8 text-center sm:text-left">
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back</h2>
+        <p className="text-slate-500">Sign in to continue your personalized learning journey.</p>
+      </div>
 
-      <article className="card auth-card">
-        <h2>Login</h2>
-        <form className="form-grid" onSubmit={handleLogin}>
-          <label>
-            Email
+      <div className="space-y-5">
+        <OAuthButton onClick={handleGoogleSignIn} disabled={isLoading} />
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-slate-200" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-white/80 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 backdrop-blur-sm rounded-full">
+              Or continue with email
+            </span>
+          </div>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+          <div>
+            <label htmlFor="login-identifier" className="block text-sm font-semibold text-slate-700">
+              Email Address
+            </label>
             <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="name@example.com"
+              id="login-identifier"
+              type="text"
               required
+              placeholder="you@example.com"
+              autoComplete="username"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              className={INPUT_CLASS}
+              aria-invalid={Boolean(errorText)}
+              aria-describedby={errorText ? "login-error" : undefined}
             />
-          </label>
+          </div>
 
-          <label>
-            Password
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="login-password" className="block text-sm font-semibold text-slate-700">
+                Password
+              </label>
+              <a
+                href="mailto:support@emotisense.ai?subject=MELD%20password%20reset"
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                Forgot password?
+              </a>
+            </div>
             <input
+              id="login-password"
               type="password"
+              required
+              placeholder="••••••••"
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
-              required
+              className={INPUT_CLASS}
+              aria-invalid={Boolean(errorText)}
+              aria-describedby={errorText ? "login-error" : undefined}
             />
-          </label>
+          </div>
 
-          <button type="submit" disabled={busy}>
-            {busy ? "Signing in..." : "Sign in"}
+          {errorText ? (
+            <motion.p
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              id="login-error"
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50/80 backdrop-blur-sm px-4 py-3 text-sm text-red-600"
+            >
+              {errorText}
+            </motion.p>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-all hover:shadow-blue-500/40 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
+          >
+            {isLoading ? <Spinner /> : null}
+            <span>{isLoading ? "Signing in..." : "Sign In"}</span>
           </button>
         </form>
 
-        {error && <div className="inline-message inline-message-soft">{error}</div>}
-
-        <p className="small-note">
-          New here? <Link to="/register">Create an account</Link>
+        <p className="text-center text-sm text-slate-500 mt-6 pt-4">
+          New to MELD Learn?{" "}
+          <Link to="/register" className="font-semibold text-blue-600 hover:text-indigo-600 transition-colors">
+            Create an account
+          </Link>
         </p>
-      </article>
-    </section>
+      </div>
+    </AuthLayout>
   );
 }
