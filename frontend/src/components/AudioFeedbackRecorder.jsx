@@ -190,7 +190,7 @@ export default function AudioFeedbackRecorder({
       throw new Error("Missing user information. Please sign in again.");
     }
     if (!normalizedSessionId && !normalizedLiveSessionId) {
-      throw new Error("Join a live class or start a session first before recording feedback.");
+      throw new Error("Audio feedback is still preparing. Please try again in a moment.");
     }
     const effectiveLessonId = normalizedLessonId || (normalizedLiveSessionId ? `live:${normalizedLiveSessionId}` : "");
     if (!effectiveLessonId) {
@@ -310,7 +310,7 @@ export default function AudioFeedbackRecorder({
 
   async function startRecording() {
     if (!sessionId && !liveSessionId) {
-      setErrorText("Join a live class or start a session first before recording feedback.");
+      setErrorText("Audio feedback is still preparing. Please try again in a moment.");
       setUploadState("failed");
       return;
     }
@@ -382,7 +382,7 @@ export default function AudioFeedbackRecorder({
 
   async function requestMicrophonePermission() {
     if (!sessionId && !liveSessionId) {
-      setErrorText("Join a live class or start a session first before enabling microphone access.");
+      setErrorText("Audio feedback is still preparing. Please try again in a moment.");
       return false;
     }
 
@@ -449,70 +449,58 @@ export default function AudioFeedbackRecorder({
   }, [sessionId, liveSessionId]);
 
   return (
-    <div className="audio-recorder">
-      <p className="small-note">Record 10-30 seconds of spoken feedback.</p>
+    <div className="space-y-4">
+      <p className="text-sm text-slate-400">Record 10-30 seconds of spoken feedback.</p>
       {microphoneSupportIssue && (
         <div className="inline-message inline-message-soft">{microphoneSupportIssue}</div>
       )}
-      {microphonePermissionState === "granted" && !isRecording && (
-        <p className="small-note">Microphone ready. You can record now.</p>
-      )}
 
-      <div className="audio-recorder__actions">
+      <div className="flex flex-wrap gap-3">
         {!isRecording && liveRecordingSupported && (
           <button
             type="button"
-            className="secondary"
-            onClick={() => void requestMicrophonePermission()}
+            className="inline-flex items-center justify-center rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={startRecording}
             disabled={isUploading || isRequestingPermission || (!sessionId && !liveSessionId)}
           >
-            {isRequestingPermission ? "Checking Mic..." : "Allow Microphone"}
-          </button>
-        )}
-
-        {!isRecording && liveRecordingSupported && (
-          <button type="button" onClick={startRecording} disabled={isUploading || (!sessionId && !liveSessionId)}>
-            Record Feedback
+            Start Recording
           </button>
         )}
 
         {!isRecording && (
           <button
             type="button"
-            className={liveRecordingSupported ? "secondary" : ""}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading || (!sessionId && !liveSessionId)}
           >
-            Upload / Record Audio
+            Submit Audio
           </button>
         )}
 
         {isRecording && (
           <button
             type="button"
-            className="secondary"
+            className="inline-flex items-center justify-center rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={stopRecording}
             disabled={recordingSeconds < MIN_RECORD_SECONDS}
           >
-            Stop ({recordingSeconds}s)
+            Stop Recording ({recordingSeconds}s)
           </button>
         )}
       </div>
 
       {isRecording && (
-        <p className="small-note">
+        <p className="text-sm text-slate-400">
           Recording in progress: {recordingSeconds}s / {MAX_RECORD_SECONDS}s
         </p>
       )}
 
-      {isUploading && <p className="small-note">Uploading and classifying voice emotion...</p>}
-      {uploadState === "recording" && <p className="small-note">Status: Recording...</p>}
-      {uploadState === "uploading" && <p className="small-note">Status: Uploading...</p>}
-      {uploadState === "processed" && <p className="small-note">Status: Processed</p>}
-      {uploadState === "failed" && <p className="small-note">Status: Failed</p>}
+      {isUploading && <p className="text-sm text-slate-400">Submitting audio feedback...</p>}
+      {uploadState === "processed" && <p className="text-sm text-emerald-300">Audio feedback submitted.</p>}
 
       {lastVoiceResult && (
-        <p className="small-note">
+        <p className="text-sm text-slate-400">
           Voice emotion: <span className={`emotion-tag emotion-tag--${lastVoiceResult.emotion}`}>
             {lastVoiceResult.emotion} {Number(lastVoiceResult.confidence || 0).toFixed(2)}
           </span>

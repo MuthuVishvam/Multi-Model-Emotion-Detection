@@ -11,7 +11,7 @@ import {
 const LOCAL_MODEL_URL = `${import.meta.env.BASE_URL || "/"}models`;
 const CDN_MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 const DETECTION_INTERVAL_MS = 2000;
-const FLUSH_INTERVAL_MS = 25000;
+const FLUSH_INTERVAL_MS = 6000;
 const CAMERA_RETRY_DELAY_MS = 900;
 const CAMERA_MAX_RETRIES = 2;
 const NO_FACE_EVENT_STREAK = 3;
@@ -139,6 +139,7 @@ export default function useEmotionTracker({
   lessonId,
   sessionId,
   liveSessionId,
+  autoStart = false,
 }) {
   const webcamRef = useRef(null);
   const streamRef = useRef(null);
@@ -228,7 +229,7 @@ export default function useEmotionTracker({
 
   function queueFaceEvent({ emotionLabel, confidence, extra }) {
     const meta = metadataRef.current;
-    if (!meta.userId || (!meta.sessionId && !meta.liveSessionId)) {
+    if (!meta.userId || (!meta.lessonId && !meta.liveSessionId)) {
       return;
     }
 
@@ -283,7 +284,30 @@ export default function useEmotionTracker({
     flushBusyRef.current = true;
 
     try {
-      await apiRequest("/emotions/batch", "POST", { events: batch }, token, { timeoutMs: 15000, retryCount: 0 });
+      if (batch.length === 1) {
+        const event = batch[0];
+        await apiRequest(
+          "/emotions/track",
+          "POST",
+          {
+            userId: event.user_id,
+            lessonId: event.lesson_id,
+            emotion: event.emotion_label,
+            confidence: event.confidence,
+            timestamp: event.timestamp,
+            classId: event.class_id,
+            courseId: event.course_id,
+            sessionId: event.session_id,
+            liveSessionId: event.live_session_id,
+            modality: event.modality,
+            extra: event.extra,
+          },
+          token,
+          { timeoutMs: 15000, retryCount: 0 }
+        );
+      } else {
+        await apiRequest("/emotions/batch", "POST", { events: batch }, token, { timeoutMs: 15000, retryCount: 0 });
+      }
       setFlushError("");
       setFaceEventsSent((current) => current + batch.length);
       console.debug("[MELD][FaceBatch] Sent", {
@@ -425,7 +449,7 @@ export default function useEmotionTracker({
       }
 
       setStatusText("Camera permission granted. Start playback to begin live face tracking.");
-      if (!trackingActive) {
+      if (!trackingActive && !autoStart) {
         stopCamera();
       }
       return true;
@@ -543,8 +567,8 @@ export default function useEmotionTracker({
       setStatusText("Tracking armed. Camera permission will be requested on Play.");
       return;
     }
-    if (!meta.sessionId && !meta.liveSessionId) {
-      setStatusText("Tracking armed. Join a live class or start a session first.");
+    if (!meta.lessonId && !meta.liveSessionId) {
+      setStatusText("Tracking will begin when the lesson is ready.");
       return;
     }
     if (permissionDeniedRef.current) {
@@ -584,7 +608,7 @@ export default function useEmotionTracker({
       }
 
       const currentMeta = metadataRef.current;
-      if (!currentMeta.sessionId && !currentMeta.liveSessionId) {
+      if (!currentMeta.lessonId && !currentMeta.liveSessionId) {
         return;
       }
 
@@ -731,6 +755,15 @@ export default function useEmotionTracker({
   }, [sessionId, liveSessionId, userId, courseId, classId, lessonId, permissionDenied]);
 
   useEffect(() => {
+    if (!autoStart || !userId || (!lessonId && !liveSessionId)) {
+      return;
+    }
+
+    lessonStartedRef.current = true;
+    setTrackingEnabled(true);
+  }, [autoStart, userId, lessonId, liveSessionId]);
+
+  useEffect(() => {
     if (flushTimerRef.current) {
       window.clearInterval(flushTimerRef.current);
     }
@@ -777,7 +810,7 @@ export default function useEmotionTracker({
     isAnalyzingFaceImage,
     isModelLoading,
     modelLoadError,
-    canLogFaceEvents: Boolean(userId && (sessionId || liveSessionId)),
+    canLogFaceEvents: Boolean(userId && (lessonId || liveSessionId)),
     requestCameraPermission,
     captureFaceFromImage,
   };

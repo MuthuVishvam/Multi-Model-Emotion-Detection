@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { io } from "socket.io-client";
+import { motion } from "framer-motion";
+import { ArrowLeft, BookOpen, Loader2 } from "lucide-react";
 
 import {
   apiRequest,
@@ -10,314 +11,61 @@ import {
   fetchLessonVoiceFeedback,
   updateLessonProgress,
 } from "../services/api";
-import Discussion from "../components/Discussion";
+import AudioFeedback from "../components/AudioFeedback";
+import CommentSection from "../components/CommentSection";
+import LessonPlayer from "../components/LessonPlayer";
+import RightSidebar from "../components/RightSidebar";
 import { getAllCourseLessons, getCourseById, getLessonById } from "../courseCatalog";
 import useAttentionTracker from "../hooks/useAttentionTracker";
 import useEmotionTracker from "../hooks/useEmotionTracker";
 import useWatchTimeTracker from "../hooks/useWatchTimeTracker";
-import { inferLessonMedia } from "../utils/lessonMedia";
-import { getRealtimeBaseUrl } from "../services/realtime";
 
-const LESSON_COMPLETION_RULES = {
-  watchThresholdPercent: 90,
-  requireAtLeastOneModality: true,
-};
+const COMPLETION_THRESHOLD = 90;
 
-function formatClock(totalSeconds) {
-  const safe = Math.max(0, Number(totalSeconds || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = Math.floor(safe % 60);
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function parseLessonDurationSeconds(lesson) {
+function normalizeLesson(lesson, index = 0) {
   if (!lesson) {
-    return 0;
+    return null;
   }
 
-  const numericCandidates = [
-    Number(lesson.duration_sec || 0),
-    Number(lesson.durationSec || 0),
-  ];
-  for (const value of numericCandidates) {
-    if (Number.isFinite(value) && value > 0) {
-      return Math.floor(value);
-    }
-  }
+  const lessonId = String(lesson?.lesson_id ?? lesson?.lessonId ?? lesson?.id ?? `_lesson_${index + 1}`);
+  const durationSec = Number(lesson?.duration_sec || lesson?.durationSec || lesson?.duration_seconds || 0);
 
-  const durationText = String(lesson.duration || "");
-  const match = durationText.match(/(\d+)\s*min/i);
-  if (match) {
-    return Number(match[1] || 0) * 60;
-  }
-  return 0;
-}
-
-function buildTimelineRows(lesson) {
-  if (!lesson) {
-    return [];
-  }
-
-  const descriptionWords = (lesson.description || "").split(/\s+/).filter(Boolean);
-  const descriptionPreview = descriptionWords.slice(0, 5).join(" ");
-
-  return [
-    { time: "00:00", label: "Overview", detail: "Lesson goals and context" },
-    { time: "25%", label: "Core concept", detail: descriptionPreview || "Main explanation" },
-    { time: "65%", label: "Practice", detail: "Examples and guided walkthrough" },
-    { time: "90%", label: "Wrap-up", detail: "Summary and next steps" },
-  ];
-}
-
-function mapAssignedLesson(lesson, index) {
-  const durationSec = Number(lesson.duration_sec || 0);
   return {
-    lesson_id: String(lesson.lesson_id ?? lesson.lessonId ?? `class-lesson-${index + 1}`),
-    title: lesson.title || `Lesson ${index + 1}`,
-    description: lesson.description || "Assigned lesson",
-    content: lesson.video_embed_url || lesson.video_url || lesson.videoUrl || lesson.content || "",
-    video_url: lesson.video_url || lesson.videoUrl || "",
-    video_embed_url: lesson.video_embed_url || lesson.videoEmbedUrl || "",
-    media_type: lesson.media_type || lesson.mediaType || "",
-    duration: durationSec > 0 ? `${Math.max(1, Math.round(durationSec / 60))} min` : "10 min",
-    resources: Array.isArray(lesson.resources) && lesson.resources.length > 0
-      ? lesson.resources
-      : ["Lesson notes", "Discussion prompts", "Practice checklist"],
-    course_id: lesson.course_id || lesson.courseId || "",
+    ...lesson,
+    lesson_id: lessonId,
+    title: lesson?.title || `Lesson ${index + 1}`,
+    description: lesson?.description || "No description has been added for this lesson yet.",
+    video_url: lesson?.video_url || lesson?.videoUrl || lesson?.content || "",
+    video_embed_url: lesson?.video_embed_url || lesson?.videoEmbedUrl || "",
+    media_type: lesson?.media_type || lesson?.mediaType || "",
+    duration: lesson?.duration || (durationSec > 0 ? `${Math.max(1, Math.round(durationSec / 60))} min` : "10 min"),
     duration_sec: durationSec,
+    course_id: lesson?.course_id || lesson?.courseId || "",
+    completed: Boolean(lesson?.completed || lesson?.progress?.completed),
   };
 }
 
-function TrackingIndicator({ tracker }) {
-  const isOn = tracker.trackingActive;
-  return (
-    <div className={isOn ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
-      <span className="tracking-indicator__dot" aria-hidden="true" />
-      <span>{isOn ? "Emotion tracking ON" : "Emotion tracking OFF"}</span>
-    </div>
-  );
-}
-
-function NotesPanel({ notesValue, setNotesValue }) {
-  return (
-    <div className="side-panel-section">
-      <h4>Lesson Notes</h4>
-      <p className="small-note">Notes are saved locally for this lesson in your browser.</p>
-      <textarea
-        className="notes-textarea"
-        value={notesValue}
-        onChange={(event) => setNotesValue(event.target.value)}
-        placeholder="Capture key ideas, questions, and action items..."
-      />
-    </div>
-  );
-}
-
-function DiscussionPanel({
-  userId,
-  courseId,
-  classId,
-  lessonId,
-  sessionId,
-  setSessionId,
-  sessionName,
-  setSessionName,
-  startSession,
-  text,
-  setText,
-  submitDiscussionMessage,
-  statusMessage,
-  isSubmitting,
-  discussionMessages,
-  sessionEmotionCounts,
-  setStatusMessage,
-  onVoicePrediction,
-}) {
-  return (
-    <Discussion
-      userId={userId}
-      courseId={courseId}
-      classId={classId}
-      lessonId={lessonId}
-      sessionId={sessionId}
-      setSessionId={setSessionId}
-      sessionName={sessionName}
-      setSessionName={setSessionName}
-      startSession={startSession}
-      text={text}
-      setText={setText}
-      submitDiscussionMessage={submitDiscussionMessage}
-      statusMessage={statusMessage}
-      isSubmitting={isSubmitting}
-      discussionMessages={discussionMessages}
-      sessionEmotionCounts={sessionEmotionCounts}
-      setStatusMessage={setStatusMessage}
-      onVoicePrediction={onVoicePrediction}
-    />
-  );
-}
-
-function ResourcesPanel({
-  selectedLesson,
-  lessonStarted,
-  onStartLesson,
-  tracker,
-  watchTracker,
-  attentionTracker,
-}) {
-  const manualFaceInputRef = useRef(null);
-
-  async function handleManualFaceUpload(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-    await tracker.captureFaceFromImage(file);
+function getLessonDurationSeconds(lesson) {
+  const numeric = Number(lesson?.duration_sec || lesson?.durationSec || lesson?.duration_seconds || 0);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
   }
 
+  const match = String(lesson?.duration || "").match(/(\d+)\s*min/i);
+  return match ? Number(match[1]) * 60 : 0;
+}
+
+function buildSessionName(lesson) {
+  const title = String(lesson?.title || "Lesson").slice(0, 80);
+  return `Student lesson: ${title}`;
+}
+
+function FeedbackSkeleton() {
   return (
-    <div className="side-panel-section">
-      <h4>Resources & Commands</h4>
-
-      <TrackingIndicator tracker={tracker} />
-      <div className="status-badge-row">
-        <span className={tracker.cameraState === "on" ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
-          Camera: {tracker.cameraState === "on" ? "On" : "Off"}
-        </span>
-        <span className={tracker.faceDetectionState === "running" ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
-          Face Detection: {tracker.faceDetectionState === "running" ? "Running" : "Not Detected"}
-        </span>
-      </div>
-      <div className={attentionTracker.trackingOn ? "tracking-indicator tracking-indicator-on" : "tracking-indicator"}>
-        <span className="tracking-indicator__dot" aria-hidden="true" />
-        <span>
-          {attentionTracker.trackingOn ? "Tracking on (watch-time + attention)" : "Tracking idle"}
-        </span>
-      </div>
-      <p className="small-note">
-        Privacy: only playback time, tab visibility, inactivity duration, and optional face presence counts are tracked.
-      </p>
-      <p className="small-note">
-        No keystroke capture, screen recording, or direct game detection is performed.
-      </p>
-
-      <div className="command-group">
-        <h5>Lesson controls</h5>
-        <button type="button" onClick={onStartLesson}>
-          {lessonStarted ? "Lesson Playing" : "Play Lesson"}
-        </button>
-        <button
-          type="button"
-          className={tracker.trackingEnabled ? "secondary" : ""}
-          onClick={tracker.toggleTracking}
-        >
-          {tracker.trackingEnabled ? "Stop Emotion Tracking" : "Start Emotion Tracking"}
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => void tracker.requestCameraPermission()}
-          disabled={tracker.isRequestingCamera}
-        >
-          {tracker.isRequestingCamera ? "Checking Camera..." : "Allow Camera"}
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => manualFaceInputRef.current?.click()}
-          disabled={!tracker.canLogFaceEvents || tracker.isAnalyzingFaceImage}
-        >
-          {tracker.isAnalyzingFaceImage ? "Analyzing Selfie..." : "Upload Selfie"}
-        </button>
-        <p className="small-note">{tracker.statusText}</p>
-        {!lessonStarted && tracker.trackingEnabled && (
-          <p className="small-note">Camera permission will be requested only after you press Play.</p>
-        )}
-        {tracker.cameraSupportIssue && (
-          <div className="inline-message inline-message-soft">
-            {tracker.cameraSupportIssue} Use HTTPS for live camera tracking, or use Upload Selfie as a fallback.
-          </div>
-        )}
-        {tracker.permissionDenied && (
-          <p className="small-note">Camera permission was denied. Lesson playback continues without tracking.</p>
-        )}
-        {!tracker.canLogFaceEvents && (
-          <p className="small-note">Start a lesson session first if you want uploaded face captures to be stored.</p>
-        )}
-        <p className="small-note">
-          Buffered detections: {tracker.queueSize}
-          {tracker.lastEmotion ? ` | Last: ${tracker.lastEmotion} (${Math.round(tracker.lastConfidence * 100)}%)` : ""}
-        </p>
-        {tracker.isModelLoading && <p className="small-note">Loading face-api.js models...</p>}
-        {tracker.modelLoadError && <p className="small-note">{tracker.modelLoadError}</p>}
-        {tracker.flushError && <p className="small-note">Batch upload retrying: {tracker.flushError}</p>}
-        {tracker.faceEventsSent > 0 && (
-          <p className="small-note">Face events sent: {tracker.faceEventsSent}</p>
-        )}
-        <p className="small-note">
-          Watch time: {watchTracker.watchedSeconds}s | Tab: {watchTracker.isTabVisible ? "visible" : "hidden"} |
-          Video: {watchTracker.isPlaying ? "playing" : "paused"}
-        </p>
-        <p className="small-note">
-          Attention state: {attentionTracker.lastState} | Idle: {attentionTracker.idleSeconds}s | Pending events: {attentionTracker.pendingCount}
-        </p>
-        {attentionTracker.lastFlushError && (
-          <p className="small-note">Attention batch retrying: {attentionTracker.lastFlushError}</p>
-        )}
-      </div>
-
-      <div className="resource-list">
-        {(selectedLesson?.resources || ["Lesson notes", "Discussion prompts", "Practice checklist"]).map((item) => (
-          <div key={item} className="resource-row">
-            <span>{item}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="command-group">
-        <h5>Camera preview</h5>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={tracker.showCameraPreview}
-            onChange={(event) => tracker.setShowCameraPreview(event.target.checked)}
-          />
-          Show preview on screen
-        </label>
-      </div>
-
-      <div className="camera-preview-card">
-        <p>{tracker.showCameraPreview ? "Camera preview" : "Camera preview hidden"}</p>
-        <video
-          className={tracker.showCameraPreview ? "webcam-video" : "webcam-video webcam-video-hidden"}
-          ref={tracker.webcamRef}
-          autoPlay
-          muted
-          playsInline
-        />
-        {!tracker.showCameraPreview && (
-          <div className="privacy-placeholder">
-            Camera runs in the background only while emotion tracking is ON.
-          </div>
-        )}
-      </div>
-
-      <input
-        ref={manualFaceInputRef}
-        type="file"
-        accept="image/*"
-        capture="user"
-        className="media-file-input"
-        onChange={(event) => {
-          void handleManualFaceUpload(event);
-        }}
-      />
+    <div className="space-y-4">
+      {[1, 2].map((item) => (
+        <div key={item} className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/80" />
+      ))}
     </div>
   );
 }
@@ -325,182 +73,121 @@ function ResourcesPanel({
 export default function LessonPlayerPage({ user }) {
   const { courseId, classId, lessonId } = useParams();
   const navigate = useNavigate();
+  const lessonVideoRef = useRef(null);
+  const lastProgressSyncRef = useRef(0);
 
   const [lessonsFromApi, setLessonsFromApi] = useState([]);
   const [classLessonsFromApi, setClassLessonsFromApi] = useState([]);
-  const [courseLoadError, setCourseLoadError] = useState("");
   const [isLoadingLessons, setIsLoadingLessons] = useState(true);
-  const [realtimeStatus, setRealtimeStatus] = useState({
-    connected: false,
-    lastEmotion: "",
-    confidence: 0,
-    updatedAt: "",
-  });
-  const [openModules, setOpenModules] = useState({});
-  const [activeTab, setActiveTab] = useState("notes");
-  const [lessonStarted, setLessonStarted] = useState(false);
-
-  const [sessionName, setSessionName] = useState("Online Class A");
+  const [loadError, setLoadError] = useState("");
   const [sessionId, setSessionId] = useState("");
-  const [text, setText] = useState("I understand this concept now.");
-  const [statusMessage, setStatusMessage] = useState("");
-  const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
-  const [discussionMessages, setDiscussionMessages] = useState([]);
-  const [isLoadingDiscussion, setIsLoadingDiscussion] = useState(false);
-  const [notesValue, setNotesValue] = useState("");
+  const [commentText, setCommentText] = useState("");
+  const [comments, setComments] = useState([]);
+  const [commentStatus, setCommentStatus] = useState("");
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [textFeedbackSent, setTextFeedbackSent] = useState(false);
   const [audioFeedbackSent, setAudioFeedbackSent] = useState(false);
-  const [completionSaved, setCompletionSaved] = useState(false);
-  const [completionMessage, setCompletionMessage] = useState("");
-  const [progressUpdateError, setProgressUpdateError] = useState("");
-  const [isProgressSyncing, setIsProgressSyncing] = useState(false);
-  const lessonVideoRef = useRef(null);
-  const lastProgressSyncRef = useRef(0);
-  const completionMarkedRef = useRef(false);
-  const classScopedCourse = useMemo(() => {
+  const [lessonPlaybackActive, setLessonPlaybackActive] = useState(false);
+
+  const classCourse = useMemo(() => {
     if (!classId) {
       return null;
     }
-    const classLessons = classLessonsFromApi.map(mapAssignedLesson);
+
+    const lessons = classLessonsFromApi.map(normalizeLesson);
     return {
       id: `class-${classId}`,
-      title: "Class Lessons",
-      subtitle: "Assigned by your teacher",
-      modules: [
-        {
-          id: "assigned-lessons",
-          title: "Assigned Lessons",
-          items: classLessons,
-        },
-      ],
+      title: "Assigned Lessons",
+      subtitle: "From your class",
+      modules: [{ id: "assigned", title: "Assigned Lessons", items: lessons }],
     };
   }, [classId, classLessonsFromApi]);
 
-  const course = useMemo(() => {
-    if (classId) {
-      return classScopedCourse;
-    }
-    return getCourseById(courseId, lessonsFromApi);
-  }, [classId, classScopedCourse, courseId, lessonsFromApi]);
-  const allCourseLessons = useMemo(() => getAllCourseLessons(course), [course]);
-  const selectedLesson = useMemo(
-    () => getLessonById(course, lessonId) || allCourseLessons[0] || null,
-    [course, lessonId, allCourseLessons]
-  );
-  const selectedMedia = useMemo(() => inferLessonMedia(selectedLesson), [selectedLesson]);
-  const timelineRows = useMemo(() => buildTimelineRows(selectedLesson), [selectedLesson]);
-  const selectedLessonDurationSec = useMemo(
-    () => parseLessonDurationSeconds(selectedLesson),
-    [selectedLesson]
+  const course = useMemo(() => (
+    classId ? classCourse : getCourseById(courseId, lessonsFromApi)
+  ), [classId, classCourse, courseId, lessonsFromApi]);
+
+  const assignedLessons = useMemo(
+    () => getAllCourseLessons(course).map(normalizeLesson).filter(Boolean),
+    [course]
   );
 
-  const sessionEmotionCounts = useMemo(() => {
-    const counts = {};
-    for (const entry of discussionMessages) {
-      const emotion = entry?.emotion || "unknown";
-      counts[emotion] = (counts[emotion] || 0) + 1;
-    }
-    return counts;
-  }, [discussionMessages]);
+  const selectedLesson = useMemo(() => {
+    const fromCourse = getLessonById(course, lessonId);
+    return normalizeLesson(fromCourse || assignedLessons[0] || null);
+  }, [assignedLessons, course, lessonId]);
 
-  const visibleDiscussionMessages = useMemo(
-    () => discussionMessages,
-    [discussionMessages]
-  );
+  const selectedLessonId = selectedLesson?.lesson_id || "";
+  const userId = String(user?.id || user?._id || user?.email || "");
 
-  const emotionTracker = useEmotionTracker({
-    userId: user?.id || user?.email || "",
-    courseId: classId ? (selectedLesson?.course_id || classId || "") : (course?.id || ""),
-    classId: classId || "",
-    lessonId: selectedLesson ? String(selectedLesson.lesson_id || "") : "",
-    sessionId,
-  });
   const watchTracker = useWatchTimeTracker(
     lessonVideoRef,
     sessionId,
-    selectedLesson ? String(selectedLesson.lesson_id || "") : "",
+    selectedLessonId,
     {
-      fallbackDurationSec: selectedLessonDurationSec,
-      completionThresholdPercent: LESSON_COMPLETION_RULES.watchThresholdPercent,
-      externalPlaying: lessonStarted && selectedMedia.type !== "video",
+      fallbackDurationSec: getLessonDurationSeconds(selectedLesson),
+      completionThresholdPercent: COMPLETION_THRESHOLD,
+      externalPlaying: lessonPlaybackActive,
     }
   );
-  const attentionStats = useMemo(
-    () => ({
-      ...(emotionTracker.faceStats || {}),
-      userId: user?.id || user?.email || "",
-      isPlaying: watchTracker.isPlaying,
-      tabVisible: watchTracker.isTabVisible,
-      watchedSeconds: watchTracker.watchedSeconds,
-    }),
-    [emotionTracker.faceStats, user?.id, user?.email, watchTracker.isPlaying, watchTracker.isTabVisible, watchTracker.watchedSeconds]
-  );
-  const attentionTracker = useAttentionTracker(
-    sessionId,
-    selectedLesson ? String(selectedLesson.lesson_id || "") : "",
-    attentionStats
-  );
-  const watchProgressCompleted = watchTracker.completionPercent >= LESSON_COMPLETION_RULES.watchThresholdPercent;
-  const faceEmotionCaptured = emotionTracker.hasFaceCapture || emotionTracker.faceEventsSent > 0;
-  const hasModalityCapture = faceEmotionCaptured || textFeedbackSent || audioFeedbackSent;
-  const lessonCompleted = watchProgressCompleted
-    && (
-      LESSON_COMPLETION_RULES.requireAtLeastOneModality
-        ? hasModalityCapture
-        : true
-    );
-  const progressSyncAllowed = Boolean(classId || selectedLesson?.source === "api" || selectedLesson?.course_id);
 
-  async function loadLessonDiscussion(lessonIdValue, classIdValue = "") {
-    if (!lessonIdValue) {
-      setDiscussionMessages([]);
+  const emotionTracker = useEmotionTracker({
+    userId,
+    courseId: selectedLesson?.course_id || course?.id || "",
+    classId: classId || "",
+    lessonId: selectedLessonId,
+    sessionId,
+    autoStart: Boolean(userId && selectedLessonId),
+  });
+
+  const attentionStats = useMemo(() => ({
+    ...(emotionTracker.faceStats || {}),
+    userId,
+    isPlaying: watchTracker.isPlaying,
+    tabVisible: watchTracker.isTabVisible,
+    watchedSeconds: watchTracker.watchedSeconds,
+  }), [
+    emotionTracker.faceStats,
+    userId,
+    watchTracker.isPlaying,
+    watchTracker.isTabVisible,
+    watchTracker.watchedSeconds,
+  ]);
+
+  useAttentionTracker(sessionId, selectedLessonId, attentionStats);
+
+  async function loadComments(nextLessonId, nextClassId = "") {
+    if (!nextLessonId) {
+      setComments([]);
       return;
     }
-    setIsLoadingDiscussion(true);
-    try {
-      const [commentRowsResult, voiceRowsResult] = await Promise.all([
-        fetchLessonComments({ lessonId: lessonIdValue, classId: classIdValue || "", limit: 200 }),
-        fetchLessonVoiceFeedback({ lessonId: lessonIdValue, classId: classIdValue || "", limit: 200 }),
-      ]);
-      const commentRows = Array.isArray(commentRowsResult) ? commentRowsResult : [];
-      let voiceRows = Array.isArray(voiceRowsResult) ? voiceRowsResult : [];
-      if (classIdValue && voiceRows.length === 0) {
-        const legacyVoiceRows = await fetchLessonVoiceFeedback({
-          lessonId: lessonIdValue,
-          classId: "",
-          limit: 200,
-        });
-        if (Array.isArray(legacyVoiceRows) && legacyVoiceRows.length > 0) {
-          voiceRows = legacyVoiceRows;
-        }
-      }
 
-      const normalizedComments = commentRows.map((row) => ({
+    try {
+      const [textRows, voiceRows] = await Promise.all([
+        fetchLessonComments({ lessonId: nextLessonId, classId: nextClassId, limit: 100 }),
+        fetchLessonVoiceFeedback({ lessonId: nextLessonId, classId: nextClassId, limit: 50 }),
+      ]);
+      const normalizedText = (Array.isArray(textRows) ? textRows : []).map((row) => ({
         id: `comment-${row.id}`,
-        sessionId: row.session_id || "",
         text: row.text || "",
         emotion: row.predicted_emotion || "unknown",
         confidence: Number(row.confidence || 0),
         timestamp: row.created_at,
         authorName: row.user_name || row.user_id || "Student",
       }));
-      const normalizedVoice = voiceRows.map((row) => ({
+      const normalizedVoice = (Array.isArray(voiceRows) ? voiceRows : []).map((row) => ({
         id: `voice-${row.id}`,
-        sessionId: row.session_id || "",
-        text: `[Voice feedback] ${row.file_ref || "recording"}`,
+        text: "Audio feedback submitted",
         emotion: row.predicted_emotion || "unknown",
         confidence: Number(row.confidence || 0),
         timestamp: row.created_at,
         authorName: row.user_name || row.user_id || "Student",
       }));
-      const merged = [...normalizedComments, ...normalizedVoice].sort(
-        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
-      setDiscussionMessages(merged);
+      setComments([...normalizedText, ...normalizedVoice].sort(
+        (a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+      ));
     } catch (error) {
-      setStatusMessage(error.message || "Failed to load lesson discussion.");
-    } finally {
-      setIsLoadingDiscussion(false);
+      setCommentStatus(error?.message || "Unable to load comments.");
     }
   }
 
@@ -508,8 +195,8 @@ export default function LessonPlayerPage({ user }) {
     let isMounted = true;
 
     async function loadLessons() {
-      const token = localStorage.getItem("token") || "";
       setIsLoadingLessons(true);
+      setLoadError("");
       try {
         if (classId) {
           let data = await fetchClassLessons(classId);
@@ -517,29 +204,23 @@ export default function LessonPlayerPage({ user }) {
             const singleLesson = await fetchLessonById(lessonId, classId);
             data = singleLesson ? [singleLesson] : [];
           }
-          if (!isMounted) {
-            return;
+          if (isMounted) {
+            setClassLessonsFromApi(Array.isArray(data) ? data : []);
+            setLessonsFromApi([]);
           }
-          setClassLessonsFromApi(Array.isArray(data) ? data : []);
-          setLessonsFromApi([]);
-          setCourseLoadError("");
           return;
         }
 
-        const data = await apiRequest("/lessons", "GET", null, token);
-        if (!isMounted) {
-          return;
+        const token = localStorage.getItem("token") || "";
+        const data = await apiRequest("/lessons/my", "GET", null, token);
+        if (isMounted) {
+          setLessonsFromApi(Array.isArray(data) ? data : []);
+          setClassLessonsFromApi([]);
         }
-        setLessonsFromApi(Array.isArray(data) ? data : []);
-        setClassLessonsFromApi([]);
-        setCourseLoadError("");
       } catch (error) {
-        if (!isMounted) {
-          return;
+        if (isMounted) {
+          setLoadError(error?.message || "Unable to load this lesson.");
         }
-        setLessonsFromApi([]);
-        setClassLessonsFromApi([]);
-        setCourseLoadError(error.message);
       } finally {
         if (isMounted) {
           setIsLoadingLessons(false);
@@ -547,698 +228,275 @@ export default function LessonPlayerPage({ user }) {
       }
     }
 
-    loadLessons();
+    void loadLessons();
+
     return () => {
       isMounted = false;
     };
   }, [classId, lessonId]);
 
   useEffect(() => {
-    const lessonKey = selectedLesson ? String(selectedLesson.lesson_id || "") : "";
-    if (!lessonKey) {
-      setDiscussionMessages([]);
-      return;
-    }
-    loadLessonDiscussion(lessonKey, classId || "");
-  }, [selectedLesson?.lesson_id, classId]);
-
-  useEffect(() => {
-    if (!course?.modules?.length) {
-      return;
-    }
-    setOpenModules((current) => {
-      const next = { ...current };
-      for (const module of course.modules) {
-        if (!(module.id in next)) {
-          next[module.id] = true;
-        }
-      }
-      return next;
-    });
-  }, [course]);
-
-  useEffect(() => {
-    if (!course || !selectedLesson) {
-      return;
-    }
-    if (String(selectedLesson.lesson_id) !== String(lessonId)) {
-      if (classId) {
-        navigate(`/student/classes/${classId}/lessons/${selectedLesson.lesson_id}`, { replace: true });
-        return;
-      }
-      navigate(`/student/courses/${course.id}/lessons/${selectedLesson.lesson_id}`, { replace: true });
-    }
-  }, [course, selectedLesson, lessonId, classId, navigate]);
-
-  useEffect(() => {
-    setLessonStarted(false);
-    emotionTracker.resetLessonStart();
+    setCommentText("");
+    setCommentStatus("");
     setTextFeedbackSent(false);
     setAudioFeedbackSent(false);
-    setCompletionSaved(false);
-    setCompletionMessage("");
-    setProgressUpdateError("");
-    completionMarkedRef.current = false;
+    setLessonPlaybackActive(false);
     lastProgressSyncRef.current = 0;
-  }, [selectedLesson?.lesson_id]);
+    emotionTracker.resetLessonStart?.();
+    void loadComments(selectedLessonId, classId || "");
+  }, [selectedLessonId, classId]);
 
   useEffect(() => {
-    if (!sessionId) {
-      setCompletionSaved(false);
-      setCompletionMessage("");
-      setProgressUpdateError("");
-      completionMarkedRef.current = false;
-      lastProgressSyncRef.current = 0;
-    }
-  }, [sessionId]);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!course || !selectedLesson) {
-      setNotesValue("");
-      return;
-    }
-    const key = `meld_notes_${course.id}_${selectedLesson.lesson_id}`;
-    setNotesValue(localStorage.getItem(key) || "");
-  }, [course, selectedLesson]);
-
-  useEffect(() => {
-    if (!course || !selectedLesson) {
-      return;
-    }
-    const key = `meld_notes_${course.id}_${selectedLesson.lesson_id}`;
-    localStorage.setItem(key, notesValue);
-  }, [course, selectedLesson, notesValue]);
-
-  useEffect(() => {
-    const lessonKey = selectedLesson ? String(selectedLesson.lesson_id || "") : "";
-    if (!lessonKey) {
-      setRealtimeStatus({ connected: false, lastEmotion: "", confidence: 0, updatedAt: "" });
-      return undefined;
-    }
-
-    const socket = io(getRealtimeBaseUrl(), { transports: ["websocket", "polling"] });
-    socket.on("connect", () => {
-      setRealtimeStatus((current) => ({ ...current, connected: true }));
-      socket.emit("join_lesson", { lessonId: lessonKey, classId: classId || null });
-      if (classId) {
-        socket.emit("join_class", {
-          classId,
-          userId: user?.id || user?.email || "student",
-          name: user?.full_name || user?.username || user?.email || "Student",
-        });
-      }
-    });
-    socket.on("disconnect", () => {
-      setRealtimeStatus((current) => ({ ...current, connected: false }));
-    });
-    socket.on("emotion_update", (payload) => {
-      if (String(payload?.lessonId || "") !== lessonKey) {
+    async function startHiddenSession() {
+      if (!selectedLessonId || !userId) {
+        setSessionId("");
         return;
       }
-      setRealtimeStatus({
-        connected: true,
-        lastEmotion: payload?.emotion || "",
-        confidence: Number(payload?.confidence || 0),
-        updatedAt: payload?.timestamp || new Date().toISOString(),
-      });
-    });
+
+      try {
+        const token = localStorage.getItem("token") || "";
+        const response = await apiRequest(
+          "/sessions/start",
+          "POST",
+          {
+            session_name: buildSessionName(selectedLesson),
+            course: selectedLesson?.course_id || course?.id || courseId || "",
+            class_id: classId || null,
+            lesson_id: selectedLessonId,
+          },
+          token
+        );
+        if (!cancelled) {
+          setSessionId(response.id || response.session_id || "");
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionId("");
+        }
+      }
+    }
+
+    void startHiddenSession();
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
     };
-  }, [selectedLesson?.lesson_id, classId, user?.id, user?.email, user?.full_name, user?.username]);
+  }, [selectedLessonId, userId, classId, course?.id, courseId]);
 
-  function toggleModule(moduleId) {
-    setOpenModules((current) => ({ ...current, [moduleId]: !current[moduleId] }));
-  }
-
-  function selectLesson(nextLessonId) {
-    if (!course) {
-      return;
-    }
-    if (classId) {
-      navigate(`/student/classes/${classId}/lessons/${nextLessonId}`);
-      return;
-    }
-    navigate(`/student/courses/${course.id}/lessons/${nextLessonId}`);
-  }
-
-  async function handleStartLesson() {
-    let activeSessionId = sessionId;
-    if (!activeSessionId) {
-      activeSessionId = await startSession();
-    }
-    if (!activeSessionId) {
-      setStatusMessage("Unable to start lesson session. Check your connection and try again.");
-      return;
-    }
-    if (!lessonStarted) {
-      setLessonStarted(true);
-    }
-    if (!emotionTracker.trackingEnabled) {
-      emotionTracker.setTrackingEnabled(true);
-    }
-    emotionTracker.handleLessonPlay();
-  }
-
-  async function syncLessonProgress({ force = false, completedOverride = null } = {}) {
-    const selectedLessonId = selectedLesson ? String(selectedLesson.lesson_id || "") : "";
-    if (!sessionId || !selectedLessonId || !progressSyncAllowed) {
-      return;
-    }
-    if (isProgressSyncing) {
+  useEffect(() => {
+    if (!sessionId || !selectedLessonId) {
       return;
     }
 
     const now = Date.now();
-    if (!force && now - lastProgressSyncRef.current < 15000) {
+    if (now - lastProgressSyncRef.current < 10000 && watchTracker.completionPercent < COMPLETION_THRESHOLD) {
       return;
     }
+    lastProgressSyncRef.current = now;
 
     const payload = {
-      session_id: sessionId,
-      watched_time_sec: Math.max(0, Math.floor(watchTracker.watchedSeconds || 0)),
-      completion_percent: Number((watchTracker.completionPercent || 0).toFixed(2)),
-      completed: completedOverride === null ? lessonCompleted : Boolean(completedOverride),
+      user_id: userId,
       class_id: classId || null,
-      face_emotion_captured: faceEmotionCaptured,
+      course_id: selectedLesson?.course_id || course?.id || null,
+      session_id: sessionId,
+      watched_time_sec: watchTracker.watchedSeconds,
+      completion_percent: watchTracker.completionPercent,
+      completed: watchTracker.completionPercent >= COMPLETION_THRESHOLD,
+      face_emotion_captured: emotionTracker.hasFaceCapture || emotionTracker.faceEventsSent > 0,
       text_feedback_sent: textFeedbackSent,
       audio_feedback_sent: audioFeedbackSent,
-      watch_progress_completed: watchProgressCompleted,
+      watch_progress_completed: watchTracker.completionPercent >= COMPLETION_THRESHOLD,
     };
 
-    try {
-      setIsProgressSyncing(true);
-      await updateLessonProgress(selectedLessonId, payload);
-      lastProgressSyncRef.current = Date.now();
-      setProgressUpdateError("");
-      console.debug("[MELD][Progress] synced", {
-        lessonId: selectedLessonId,
-        sessionId,
-        completionPercent: payload.completion_percent,
-        completed: payload.completed,
-      });
-    } catch (error) {
-      setProgressUpdateError(error?.message || "Failed to sync lesson progress.");
-    } finally {
-      setIsProgressSyncing(false);
+    void updateLessonProgress(selectedLessonId, payload).catch(() => {});
+  }, [
+    audioFeedbackSent,
+    classId,
+    course?.id,
+    emotionTracker.faceEventsSent,
+    emotionTracker.hasFaceCapture,
+    selectedLesson?.course_id,
+    selectedLessonId,
+    sessionId,
+    textFeedbackSent,
+    userId,
+    watchTracker.completionPercent,
+    watchTracker.watchedSeconds,
+  ]);
+
+  function selectLesson(nextLessonId) {
+    if (!nextLessonId || String(nextLessonId) === String(selectedLessonId)) {
+      return;
     }
+    const prefix = classId
+      ? `/student/classes/${classId}/lessons`
+      : `/student/courses/${courseId}/lessons`;
+    navigate(`${prefix}/${nextLessonId}`);
   }
 
-  async function startSession() {
-    const token = localStorage.getItem("token") || "";
-    try {
-      const data = await apiRequest(
-        "/sessions/start",
-        "POST",
-        {
-          session_name: sessionName,
-          course: classId ? (selectedLesson?.course_id || classId) : (course?.id || null),
-          class_id: classId || null,
-          lesson_id: selectedLesson ? String(selectedLesson.lesson_id || "") : null,
-        },
-        token
-      );
-      const nextSessionId = data.id || data.session_id || "";
-      setSessionId(nextSessionId);
-      setTextFeedbackSent(false);
-      setAudioFeedbackSent(false);
-      setCompletionSaved(false);
-      setCompletionMessage("");
-      completionMarkedRef.current = false;
-      lastProgressSyncRef.current = 0;
-      setStatusMessage(`Session started: ${nextSessionId}`);
-      return nextSessionId;
-    } catch (error) {
-      setStatusMessage(error.message);
-      return "";
-    }
-  }
-
-  async function submitDiscussionMessage() {
-    if (!sessionId) {
-      setStatusMessage("Start a session first before sending discussion messages.");
+  async function submitComment() {
+    const text = commentText.trim();
+    if (!text || !selectedLessonId || !userId) {
       return;
     }
 
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setStatusMessage("Type a comment or command first.");
-      return;
-    }
-
-    const token = localStorage.getItem("token") || "";
-    setIsSubmittingMessage(true);
-
+    setIsSubmittingComment(true);
+    setCommentStatus("");
     try {
-      const timestamp = new Date().toISOString();
-      const data = await apiRequest(
+      const token = localStorage.getItem("token") || "";
+      const response = await apiRequest(
         "/emotions/text",
         "POST",
         {
-          userId: user?.id || user?.email || "",
-          courseId: classId ? (selectedLesson?.course_id || classId) : (course?.id || ""),
-          classId: classId || null,
-          lessonId: selectedLesson ? String(selectedLesson.lesson_id) : "",
+          userId,
+          courseId: selectedLesson?.course_id || course?.id || "",
+          classId: classId || "",
+          lessonId: selectedLessonId,
           sessionId,
-          text: trimmed,
-          timestamp,
+          text,
+          timestamp: new Date().toISOString(),
         },
         token
       );
-
-      const entry = {
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        sessionId,
-        text: trimmed,
-        timestamp,
-        emotion: data.emotion,
-        confidence: Number(data.confidence || 0),
-        suggestion: data.suggestion || "",
-      };
-
-      setDiscussionMessages((current) => [entry, ...current]);
-
-      setText("");
-      setStatusMessage(`Tagged as ${data.emotion} (${Number(data.confidence || 0).toFixed(2)}).`);
+      setCommentText("");
       setTextFeedbackSent(true);
-      void syncLessonProgress({ force: true });
-      console.debug("[MELD][Text] submitted", {
-        lessonId: selectedLesson ? String(selectedLesson.lesson_id) : "",
-        sessionId,
-        emotion: data?.emotion,
-      });
+      setComments((current) => [
+        {
+          id: response.comment_id || `local-${Date.now()}`,
+          text,
+          emotion: response.emotion || "unknown",
+          confidence: Number(response.confidence || 0),
+          timestamp: response.created_at || new Date().toISOString(),
+          authorName: user?.full_name || user?.name || user?.email || "Student",
+        },
+        ...current,
+      ]);
+      setCommentStatus("Comment sent.");
     } catch (error) {
-      const value = String(error?.message || "");
-      if (value.toLowerCase().includes("network") || value.toLowerCase().includes("failed")) {
-        setStatusMessage("Unable to submit text emotion right now. Check connection and try again.");
-      } else {
-        setStatusMessage(value || "Unable to submit text emotion.");
-      }
+      setCommentStatus(error?.message || "Unable to send comment.");
     } finally {
-      setIsSubmittingMessage(false);
+      setIsSubmittingComment(false);
     }
   }
 
-  function handleVoicePrediction({ emotion, confidence, timestamp }) {
-    if (!sessionId) {
-      return;
-    }
-
-    const entry = {
-      id: `voice-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      sessionId,
-      text: "[Voice feedback recording]",
-      timestamp: timestamp || new Date().toISOString(),
-      emotion: emotion || "neutral",
-      confidence: Number(confidence || 0),
-      suggestion: "Voice emotion detected from recorded student feedback.",
-      messageType: "voice",
-    };
-
-    setDiscussionMessages((current) => [entry, ...current]);
+  function handleVoicePrediction(prediction) {
     setAudioFeedbackSent(true);
-    void syncLessonProgress({ force: true });
+    setComments((current) => [
+      {
+        id: prediction?.feedbackId || `voice-${Date.now()}`,
+        text: "Audio feedback submitted",
+        emotion: prediction?.emotion || "unknown",
+        confidence: Number(prediction?.confidence || 0),
+        timestamp: prediction?.timestamp || new Date().toISOString(),
+        authorName: user?.full_name || user?.name || user?.email || "Student",
+      },
+      ...current,
+    ]);
   }
 
-  useEffect(() => {
-    if (!sessionId || !selectedLesson?.lesson_id) {
-      return;
-    }
-    void syncLessonProgress();
-  }, [
-    sessionId,
-    selectedLesson?.lesson_id,
-    watchTracker.watchedSeconds,
-    watchTracker.completionPercent,
-    faceEmotionCaptured,
-    textFeedbackSent,
-    audioFeedbackSent,
-    watchProgressCompleted,
-    lessonCompleted,
-    progressSyncAllowed,
-  ]);
-
-  useEffect(() => {
-    if (!lessonCompleted || completionMarkedRef.current) {
-      return;
-    }
-    completionMarkedRef.current = true;
-    setCompletionSaved(true);
-    setCompletionMessage("Lesson Completed Successfully");
-    void syncLessonProgress({ force: true, completedOverride: true });
-  }, [lessonCompleted, sessionId, selectedLesson?.lesson_id]);
+  function handlePlaybackStart() {
+    setLessonPlaybackActive(true);
+    emotionTracker.handleLessonPlay();
+  }
 
   if (isLoadingLessons) {
     return (
-      <div className="learning-page p-4">
-        <div className="glass-panel rounded-2xl p-8 min-h-[420px] flex flex-col justify-center">
-          <div className="h-7 w-56 bg-slate-800 rounded-lg animate-pulse mb-5" />
-          <div className="aspect-video w-full bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-            <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
-            <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
-            <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-5 h-8 w-48 animate-pulse rounded-lg bg-slate-800" />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-5">
+            <div className="aspect-video animate-pulse rounded-xl bg-slate-900" />
+            <div className="h-32 animate-pulse rounded-xl bg-slate-900" />
+            <FeedbackSkeleton />
           </div>
+          <div className="h-96 animate-pulse rounded-xl bg-slate-900" />
         </div>
       </div>
     );
   }
 
-  if (!course) {
+  if (loadError || !selectedLessonId) {
     return (
-      <div className="learning-page">
-        <div className="card empty-state">
-          <h2>{courseLoadError ? "Lesson unavailable" : "Course not found"}</h2>
-          <p>{courseLoadError || "Open the course catalog and select a valid course."}</p>
-          <Link className="button-link" to="/student">Back to catalog</Link>
-        </div>
+      <div className="mx-auto max-w-3xl rounded-xl border border-slate-800 bg-slate-900/85 p-8 text-center">
+        <BookOpen className="mx-auto mb-4 h-10 w-10 text-slate-500" aria-hidden="true" />
+        <h1 className="text-xl font-semibold text-slate-100">Lesson unavailable</h1>
+        <p className="mt-2 text-sm text-slate-400">{loadError || "No lesson was found for this class or course."}</p>
+        <Link className="mt-5 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white" to="/student">
+          Back to dashboard
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="learning-page p-0 md:p-4 w-full max-w-[1800px] mx-auto">
-      {courseLoadError && <div className="card inline-message mb-4">{courseLoadError}</div>}
+    <motion.div
+      className="mx-auto max-w-[1500px]"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+          onClick={() => navigate(-1)}
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back
+        </button>
+        {!sessionId && (
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            Preparing feedback
+          </span>
+        )}
+      </div>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Main Content Area (Player + Info + Discussion) */}
-        <main className="flex-1 flex flex-col min-w-0 w-full lg:w-2/3 xl:w-3/4">
-          
-          {selectedLesson ? (
-            <>
-              {/* THEATER MODE PLAYER */}
-              <div className="w-full bg-black rounded-xl overflow-hidden shadow-2xl relative aspect-video flex items-center justify-center">
-                {!lessonStarted && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-slate-900/90 to-black/95 z-10 backdrop-blur-sm">
-                    <div className="h-16 w-16 bg-brand-600 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(37,99,235,0.6)] cursor-pointer hover:scale-110 transition-transform" onClick={handleStartLesson}>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white ml-1" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <h4 className="text-3xl font-bold text-white mb-3">Ready to learn?</h4>
-                    <p className="text-slate-400 max-w-md mx-auto mb-8 text-sm">
-                      Press play to start. Make sure your environment is well-lit for optimal emotion tracking.
-                    </p>
-                    
-                    <div className="flex flex-wrap gap-4 justify-center">
-                      {!emotionTracker.trackingEnabled && (
-                        <button 
-                          type="button" 
-                          className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-full border border-slate-700 transition-all shadow-lg"
-                          onClick={emotionTracker.toggleTracking}
-                        >
-                          Arm Emotion Tracking
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="px-6 py-2.5 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 text-sm font-semibold rounded-full border border-brand-500/30 transition-all disabled:opacity-50"
-                        onClick={() => void emotionTracker.requestCameraPermission()}
-                        disabled={emotionTracker.isRequestingCamera}
-                      >
-                        {emotionTracker.isRequestingCamera ? "Checking..." : "Allow Camera"}
-                      </button>
-                    </div>
-                  </div>
-                )}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <main className="min-w-0 space-y-5">
+          <LessonPlayer
+            lesson={selectedLesson}
+            videoRef={lessonVideoRef}
+            onPlaybackStart={handlePlaybackStart}
+          />
 
-                {lessonStarted && selectedMedia.type === "youtube" && (
-                  <iframe
-                    className="w-full h-full border-0"
-                    src={selectedMedia.src}
-                    title={`Lesson video: ${selectedLesson.title}`}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                )}
+          <section className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/20">
+            <h1 className="text-2xl font-bold leading-tight text-slate-50 sm:text-3xl">{selectedLesson.title}</h1>
+            <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-400">{selectedLesson.description}</p>
+          </section>
 
-                {lessonStarted && selectedMedia.type === "video" && (
-                  <video
-                    ref={lessonVideoRef}
-                    className="w-full h-full object-contain bg-black"
-                    controls
-                    autoPlay
-                    src={selectedMedia.src}
-                    onPlay={handleStartLesson}
-                  >
-                    Your browser does not support video playback.
-                  </video>
-                )}
+          <CommentSection
+            value={commentText}
+            onChange={setCommentText}
+            onSubmit={submitComment}
+            isSubmitting={isSubmittingComment}
+            disabled={!sessionId}
+            statusMessage={commentStatus}
+            comments={comments}
+          />
 
-                {lessonStarted && selectedMedia.type === "none" && (
-                  <div className="text-slate-400 text-sm">
-                    No media URL is attached to this lesson yet.
-                  </div>
-                )}
-
-                {lessonStarted && selectedMedia.type === "link" && (
-                  <div className="flex flex-col items-center justify-center gap-4 p-8 text-center">
-                    <p className="text-slate-300 text-sm">
-                      This lesson uses a link that cannot be embedded in the player.
-                    </p>
-                    <a
-                      className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold rounded-lg transition-colors"
-                      href={selectedMedia.src}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open lesson link
-                    </a>
-                  </div>
-                )}
-              </div>
-
-              {/* VIDEO INFO BAR */}
-              <div className="mt-4 mb-6">
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-100 leading-tight mb-2">{selectedLesson.title}</h1>
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg">
-                        {course.title.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-200 leading-none">{course.title}</p>
-                        <p className="text-xs text-slate-500 mt-1">{course.subtitle || "Course"}</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <div className="px-3 py-1.5 glass-panel rounded-full flex items-center gap-2 border-brand-500/20">
-                      <span className={`w-2 h-2 rounded-full ${attentionTracker.trackingOn ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" : "bg-slate-600"}`} />
-                      <span className="text-xs font-bold text-slate-300">
-                        {attentionTracker.trackingOn ? "Tracking Active" : "Tracking Idle"}
-                      </span>
-                    </div>
-                    <span className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs font-bold rounded-full border border-slate-700">
-                      {selectedLesson.duration || "10 min"}
-                    </span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-4">
-                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Camera</p>
-                    <p className="text-sm font-bold text-slate-200 mt-1">
-                      {emotionTracker.cameraState === "on" ? "Preview active" : "Waiting for permission"}
-                    </p>
-                  </div>
-                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Emotion</p>
-                    <p className="text-sm font-bold text-slate-200 mt-1">
-                      {emotionTracker.lastEmotion || realtimeStatus.lastEmotion || "Not detected yet"}
-                    </p>
-                  </div>
-                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Confidence</p>
-                    <p className="text-sm font-bold text-slate-200 mt-1">
-                      {Math.round(Number(emotionTracker.lastConfidence || realtimeStatus.confidence || 0) * 100)}%
-                    </p>
-                  </div>
-                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Realtime</p>
-                    <p className={`text-sm font-bold mt-1 ${realtimeStatus.connected ? "text-emerald-300" : "text-slate-400"}`}>
-                      {realtimeStatus.connected ? "Connected" : "Reconnecting"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* TABS & DESCRIPTION */}
-              <div className="glass-panel rounded-2xl p-6">
-                <div className="flex w-full border-b border-slate-800 mb-6">
-                  {["Notes", "Discussion", "Progress"].map((label) => {
-                    const value = label.toLowerCase();
-                    const isActive = activeTab === value;
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        className={`px-6 py-3 text-sm font-bold border-b-2 transition-all ${isActive ? "border-brand-500 text-brand-400" : "border-transparent text-slate-500 hover:text-slate-300"}`}
-                        onClick={() => setActiveTab(value)}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {activeTab === "notes" && (
-                  <div className="space-y-4 text-slate-300">
-                    <p className="text-sm leading-relaxed">{selectedLesson.description}</p>
-                    <div className="mt-8">
-                      <NotesPanel notesValue={notesValue} setNotesValue={setNotesValue} />
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === "discussion" && (
-                  <DiscussionPanel
-                    userId={user?.id || user?.email || ""}
-                    courseId={course?.id || ""}
-                    classId={classId || ""}
-                    lessonId={selectedLesson ? String(selectedLesson.lesson_id) : ""}
-                    sessionId={sessionId}
-                    setSessionId={setSessionId}
-                    sessionName={sessionName}
-                    setSessionName={setSessionName}
-                    startSession={startSession}
-                    text={text}
-                    setText={setText}
-                    submitDiscussionMessage={submitDiscussionMessage}
-                    statusMessage={statusMessage}
-                    isSubmitting={isSubmittingMessage}
-                    discussionMessages={visibleDiscussionMessages}
-                    sessionEmotionCounts={sessionEmotionCounts}
-                    setStatusMessage={setStatusMessage}
-                    onVoicePrediction={handleVoicePrediction}
-                  />
-                )}
-
-                {activeTab === "progress" && (
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-base font-bold text-slate-200">Session Progress</h4>
-                      <span className="text-xs font-bold text-brand-400 bg-brand-500/10 px-3 py-1 rounded-full border border-brand-500/20">{Number(watchTracker.completionPercent || 0).toFixed(1)}% watched</span>
-                    </div>
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(watchTracker.completionPercent || 0)}>
-                      <div
-                        className="h-full bg-gradient-to-r from-brand-500 to-indigo-500 rounded-full transition-all duration-300 ease-out"
-                        style={{ width: `${Math.min(100, Number(watchTracker.completionPercent || 0))}%` }}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${faceEmotionCaptured ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
-                        <span className="text-xs font-bold uppercase tracking-wider">Face</span>
-                        <span className="text-sm font-bold">{faceEmotionCaptured ? "Done" : "Waiting"}</span>
-                      </div>
-                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${textFeedbackSent ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
-                        <span className="text-xs font-bold uppercase tracking-wider">Text</span>
-                        <span className="text-sm font-bold">{textFeedbackSent ? "Done" : "Waiting"}</span>
-                      </div>
-                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${audioFeedbackSent ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
-                        <span className="text-xs font-bold uppercase tracking-wider">Audio</span>
-                        <span className="text-sm font-bold">{audioFeedbackSent ? "Done" : "Waiting"}</span>
-                      </div>
-                      <div className={`p-4 rounded-xl border flex flex-col gap-2 ${watchProgressCompleted ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
-                        <span className="text-xs font-bold uppercase tracking-wider">Watch</span>
-                        <span className="text-sm font-bold">{watchProgressCompleted ? "Done" : "Waiting"}</span>
-                      </div>
-                    </div>
-                    {(lessonCompleted || completionSaved) && (
-                      <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-center py-4 rounded-xl font-bold shadow-lg shadow-emerald-500/10 animate-pulse mt-4">
-                        Lesson completed successfully.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-12 glass-panel rounded-2xl min-h-[500px]">
-              <div className="w-20 h-20 mb-6 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700 shadow-xl">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-200 mb-2">No lesson selected</h3>
-              <p className="text-slate-500 text-center max-w-md">Select a lesson from the Up Next sidebar to begin your learning session.</p>
-            </div>
-          )}
+          <AudioFeedback
+            userId={userId}
+            courseId={selectedLesson?.course_id || course?.id || ""}
+            classId={classId || ""}
+            lessonId={selectedLessonId}
+            sessionId={sessionId}
+            onPrediction={handleVoicePrediction}
+            onStatusMessage={setCommentStatus}
+          />
         </main>
 
-        {/* Up Next Sidebar (Like YouTube) */}
-        <aside className="w-full lg:w-1/3 xl:w-1/4 flex flex-col gap-6 flex-shrink-0">
-          <div className="glass-panel rounded-2xl overflow-hidden shadow-lg border border-slate-700/50">
-            <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Up Next</h3>
-              <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2 py-1 rounded-md">
-                {classId ? "Class" : "Course"}
-              </span>
-            </div>
-            
-            <div className="overflow-y-auto max-h-[600px] flex flex-col">
-              {(course.modules || []).map((module) => (
-                <div key={module.id} className="border-b border-slate-800/50 last:border-0">
-                  <button
-                    type="button"
-                    className="w-full flex items-center justify-between px-4 py-3 bg-slate-900 hover:bg-slate-800 transition-colors"
-                    onClick={() => toggleModule(module.id)}
-                  >
-                    <span className="text-sm font-bold text-slate-300">{module.title}</span>
-                    <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-xs border border-slate-700">{module.items.length}</span>
-                  </button>
-                  {openModules[module.id] && (
-                    <div className="flex flex-col bg-slate-900/50">
-                      {module.items.map((lesson, idx) => {
-                        const isActive = String(selectedLesson?.lesson_id) === String(lesson.lesson_id);
-                        return (
-                          <button
-                            key={lesson.lesson_id}
-                            type="button"
-                            className={`w-full flex gap-3 px-4 py-3 text-left transition-all hover:bg-slate-800/80 ${isActive ? "bg-brand-500/10 border-l-2 border-brand-500" : "border-l-2 border-transparent"}`}
-                            onClick={() => selectLesson(lesson.lesson_id)}
-                          >
-                            <div className="relative shrink-0 w-32 h-20 bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
-                              <div className="absolute inset-0 flex items-center justify-center opacity-50">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                </svg>
-                              </div>
-                              <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-                                {lesson.duration || "10:00"}
-                              </span>
-                            </div>
-                            <div className="flex-1 min-w-0 py-0.5">
-                              <h4 className={`text-sm leading-tight mb-1 line-clamp-2 ${isActive ? "font-bold text-brand-400" : "font-semibold text-slate-200"}`}>
-                                {lesson.title}
-                              </h4>
-                              <p className="text-xs text-slate-500">MELD Learn</p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="glass-panel rounded-2xl p-5 shadow-lg border border-slate-700/50">
-            <ResourcesPanel
-              selectedLesson={selectedLesson}
-              lessonStarted={lessonStarted}
-              onStartLesson={handleStartLesson}
-              tracker={emotionTracker}
-              watchTracker={watchTracker}
-              attentionTracker={attentionTracker}
-            />
-          </div>
-        </aside>
+        <RightSidebar
+          lessons={assignedLessons}
+          activeLessonId={selectedLessonId}
+          onSelectLesson={selectLesson}
+          cameraRef={emotionTracker.webcamRef}
+          cameraState={emotionTracker.cameraState}
+          permissionDenied={emotionTracker.permissionDenied}
+        />
       </div>
-    </div>
+    </motion.div>
   );
 }

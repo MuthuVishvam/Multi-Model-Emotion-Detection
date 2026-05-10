@@ -20,10 +20,6 @@ export default function Navbar({ user, unreadCount, onLogout }) {
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-brand-500/10 border border-brand-500/20 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-xs font-semibold text-brand-300">Live Status: Active</span>
-          </div>
         </div>
 
         <div className="flex items-center gap-4 sm:gap-6">

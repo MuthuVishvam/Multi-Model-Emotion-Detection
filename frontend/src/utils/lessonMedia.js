@@ -1,34 +1,12 @@
 import { buildApiUrl } from "../services/api";
+import { getYoutubeEmbedUrl, getYoutubeVideoId } from "./getYoutubeEmbedUrl";
 
 export function extractYouTubeVideoId(urlString) {
-  if (!urlString) return "";
-
-  try {
-    const url = new URL(String(urlString).trim());
-    const host = url.hostname.replace(/^www\./, "").toLowerCase();
-
-    if (host === "youtu.be") {
-      return url.pathname.split("/").filter(Boolean)[0] || "";
-    }
-
-    if (["youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"].includes(host)) {
-      if (url.pathname === "/watch") {
-        return url.searchParams.get("v") || "";
-      }
-      if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/live/")) {
-        return url.pathname.split("/").filter(Boolean)[1] || "";
-      }
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
+  return getYoutubeVideoId(urlString);
 }
 
 export function toYouTubeEmbedUrl(urlString) {
-  const youtubeId = extractYouTubeVideoId(urlString);
-  return youtubeId ? `https://www.youtube.com/embed/${youtubeId}` : "";
+  return getYoutubeEmbedUrl(urlString);
 }
 
 export function inferLessonMedia(lessonOrUrl) {

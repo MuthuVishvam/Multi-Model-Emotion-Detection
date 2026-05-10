@@ -4,6 +4,7 @@ import logging
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel, Field
 from pydantic import ValidationError
 
 from app.config import settings
@@ -41,6 +42,20 @@ batch_router = APIRouter(
 )
 session_text_emotion_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 logger = logging.getLogger("emotion_backend")
+
+
+class EmotionTrackRequest(BaseModel):
+    userId: str = Field(min_length=1)
+    lessonId: str = Field(min_length=1)
+    emotion: str = Field(min_length=1)
+    confidence: float = Field(ge=0.0, le=1.0)
+    timestamp: datetime | None = None
+    classId: str | None = None
+    courseId: str | None = None
+    sessionId: str | None = None
+    liveSessionId: str | None = None
+    modality: str = "face"
+    extra: dict = Field(default_factory=dict)
 
 
 @router.post(
@@ -98,6 +113,39 @@ async def predict_text_emotion(
     )
 
     return EmotionPredictResponse(emotion=emotion, scores=scores, timestamp=timestamp)
+
+
+@batch_router.post(
+    "/track",
+    response_model=EventBatchIngestResponse,
+    dependencies=[Depends(enforce_emotion_ingest_rate_limit)],
+)
+async def track_emotion_event(
+    payload: EmotionTrackRequest,
+    current_user: dict = Depends(get_current_user),
+) -> EventBatchIngestResponse:
+    timestamp = payload.timestamp or datetime.now(timezone.utc)
+    event = {
+        "user_id": payload.userId,
+        "teacher_id": current_user.get("id") if current_user.get("role") == "teacher" else None,
+        "class_id": (payload.classId or "").strip() or None,
+        "course_id": (payload.courseId or "").strip() or None,
+        "lesson_id": payload.lessonId,
+        "session_id": (payload.sessionId or "").strip() or None,
+        "live_session_id": (payload.liveSessionId or "").strip() or None,
+        "modality": (payload.modality or "face").strip() or "face",
+        "emotion_label": payload.emotion,
+        "confidence": payload.confidence,
+        "engagement_score": round(payload.confidence * 100.0, 2),
+        "timestamp": timestamp,
+        "extra": payload.extra or {},
+    }
+    result = await emotion_event_analytics_service.ingest_emotion_events(
+        events=[event],
+        current_user=current_user,
+    )
+    await emit_lesson_emotion_update(event)
+    return EventBatchIngestResponse(**result)
 
 
 @batch_router.post(
