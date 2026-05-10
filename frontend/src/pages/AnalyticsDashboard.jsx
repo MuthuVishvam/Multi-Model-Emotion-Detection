@@ -1,25 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Brain, Loader2 } from "lucide-react";
+import { BarChart3, Loader2, RefreshCw } from "lucide-react";
 
 import {
   buildEmotionWorkspaceExportUrl,
   fetchClassLessons,
   fetchEmotionWorkspaceAnalytics,
-  fetchEmotionWorkspaceLive,
-  fetchEmotionWorkspaceReport,
   fetchMyClasses,
 } from "../services/api";
 import { getStoredToken } from "../api/tokenStorage";
-import AIInsightPanel from "../components/analytics/AIInsightPanel";
 import CompareMode from "../components/analytics/CompareMode";
 import DashboardLayout from "../components/analytics/DashboardLayout";
 import EmotionCharts from "../components/analytics/EmotionCharts";
-import ExportControls from "../components/analytics/ExportControls";
 import FilterBar from "../components/analytics/FilterBar";
 import KPISection from "../components/analytics/KPISection";
-import LiveMonitoring from "../components/analytics/LiveMonitoring";
-import ReportGenerator from "../components/analytics/ReportGenerator";
 
 function toIsoStart(value) {
   return value ? `${value}T00:00:00Z` : "";
@@ -54,16 +48,12 @@ const DEFAULT_FILTERS = {
   chartType: "line",
 };
 
-export default function AnalyticsDashboard({ user, mode = "teacher" }) {
+export default function AnalyticsDashboard({ mode = "teacher" }) {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [classes, setClasses] = useState([]);
   const [lessons, setLessons] = useState([]);
   const [analytics, setAnalytics] = useState(null);
-  const [report, setReport] = useState(null);
-  const [live, setLive] = useState(null);
-  const [reportType, setReportType] = useState("teacher");
   const [isLoading, setIsLoading] = useState(true);
-  const [isReportLoading, setIsReportLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   const students = useMemo(() => {
@@ -77,7 +67,7 @@ export default function AnalyticsDashboard({ user, mode = "teacher" }) {
     return [...map.values()];
   }, [analytics]);
 
-  const apiFilters = useMemo(() => buildApiFilters(filters, reportType), [filters, reportType]);
+  const apiFilters = useMemo(() => buildApiFilters(filters), [filters]);
 
   const updateFilters = useCallback((patch) => {
     setFilters((current) => ({ ...current, ...patch }));
@@ -113,19 +103,11 @@ export default function AnalyticsDashboard({ user, mode = "teacher" }) {
     setIsLoading(true);
     setMessage("");
     try {
-      const [analyticsData, reportData, liveData] = await Promise.all([
-        fetchEmotionWorkspaceAnalytics(apiFilters),
-        fetchEmotionWorkspaceReport(apiFilters),
-        fetchEmotionWorkspaceLive(apiFilters),
-      ]);
+      const analyticsData = await fetchEmotionWorkspaceAnalytics(apiFilters);
       setAnalytics(analyticsData);
-      setReport(reportData);
-      setLive(liveData);
     } catch (error) {
       setMessage(error?.message || "Unable to load analytics workspace.");
       setAnalytics(null);
-      setReport(null);
-      setLive(null);
     } finally {
       setIsLoading(false);
     }
@@ -142,23 +124,6 @@ export default function AnalyticsDashboard({ user, mode = "teacher" }) {
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      fetchEmotionWorkspaceLive(apiFilters).then(setLive).catch(() => {});
-    }, 10000);
-    return () => window.clearInterval(timer);
-  }, [apiFilters]);
-
-  async function refreshReport(nextType) {
-    setReportType(nextType);
-    setIsReportLoading(true);
-    try {
-      setReport(await fetchEmotionWorkspaceReport(buildApiFilters(filters, nextType)));
-    } finally {
-      setIsReportLoading(false);
-    }
-  }
 
   async function handleExport(format) {
     const token = getStoredToken();
@@ -179,33 +144,31 @@ export default function AnalyticsDashboard({ user, mode = "teacher" }) {
     URL.revokeObjectURL(objectUrl);
   }
 
-  const insightPanel = <AIInsightPanel report={report} loading={isReportLoading || isLoading} />;
-
   return (
-    <DashboardLayout role={mode} insights={insightPanel}>
-      <div className="space-y-5">
+    <DashboardLayout role={mode}>
+      <div className="mx-auto w-full max-w-none space-y-4 2xl:space-y-5">
         <motion.section
-          className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80 p-6 shadow-2xl shadow-slate-950/30"
+          className="rounded-[8px] border border-blue-400/10 bg-slate-950/75 p-4 shadow-xl shadow-slate-950/25 backdrop-blur-xl"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-cyan-200">
-                <Brain className="h-4 w-4" aria-hidden="true" />
-                AI Learning Intelligence Platform
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-cyan-200">
+                <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+                Analytics Workspace
               </div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-50 md:text-5xl">Educational Intelligence Workspace</h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400 md:text-base">
-                Monitor engagement, attention, confusion spikes, lesson effectiveness, and student learning signals in one analytics-first dashboard.
+              <h1 className="text-2xl font-black tracking-tight text-slate-50 md:text-3xl">MELD Analytics Dashboard</h1>
+              <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-400">
+                Lesson engagement, emotion distribution, confidence thresholds, and cohort comparison in one focused analytics view.
               </p>
             </div>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-bold text-slate-100 hover:border-cyan-400/50"
+              className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-slate-700 bg-slate-900/90 px-3 text-sm font-bold text-slate-100 shadow-lg shadow-slate-950/20 hover:border-cyan-400/50 hover:bg-slate-800"
               onClick={loadWorkspace}
             >
-              {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
               Refresh
             </button>
           </div>
@@ -223,17 +186,19 @@ export default function AnalyticsDashboard({ user, mode = "teacher" }) {
         {message && <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{message}</div>}
 
         {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[1, 2, 3, 4, 5, 6].map((item) => <div key={item} className="h-40 animate-pulse rounded-xl bg-slate-900" />)}
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((item) => <div key={item} className="h-28 animate-pulse rounded-[8px] bg-slate-900/80" />)}
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {[1, 2, 3, 4].map((item) => <div key={item} className="h-[360px] animate-pulse rounded-[8px] bg-slate-900/80" />)}
+            </div>
           </div>
         ) : (
           <>
             <KPISection kpis={analytics?.kpis || {}} trend={analytics?.engagement_trend || []} />
             <CompareMode enabled={filters.compareMode} data={analytics} />
             <EmotionCharts data={analytics || {}} chartType={filters.chartType} />
-            <LiveMonitoring live={live} />
-            <ReportGenerator report={report} reportType={reportType} onReportTypeChange={refreshReport} />
-            <ExportControls onExport={handleExport} />
           </>
         )}
       </div>
