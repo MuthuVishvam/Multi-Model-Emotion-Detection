@@ -2,6 +2,8 @@ from socketio import AsyncServer, ASGIApp
 from fastapi import FastAPI
 import logging
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 sio: AsyncServer = None
@@ -12,7 +14,7 @@ def setup_socketio(app: FastAPI) -> AsyncServer:
     
     sio = AsyncServer(
         async_mode="asgi",
-        cors_allowed_origins="*",
+        cors_allowed_origins=settings.cors_origins or "*",
         ping_timeout=60,
         ping_interval=25,
     )
@@ -30,20 +32,29 @@ def setup_socketio(app: FastAPI) -> AsyncServer:
     # Live class events
     @sio.event
     async def join_class(sid, data):
-        room = f"class_{data['classId']}"
-        sio.enter_room(sid, room)
+        room = f"class_{data.get('classId')}"
+        await sio.enter_room(sid, room)
         await sio.emit("user_joined", {
-            "userId": data['userId'],
-            "name": data['name']
+            "userId": data.get('userId'),
+            "name": data.get('name')
         }, room=room)
+
+    @sio.event
+    async def join_lesson(sid, data):
+        lesson_id = str(data.get("lessonId") or "").strip()
+        if not lesson_id:
+            return
+        room = f"lesson_{lesson_id}"
+        await sio.enter_room(sid, room)
+        await sio.emit("lesson_joined", {"lessonId": lesson_id}, to=sid)
     
     @sio.event
     async def leave_class(sid, data):
-        room = f"class_{data['classId']}"
-        sio.leave_room(sid, room)
+        room = f"class_{data.get('classId')}"
+        await sio.leave_room(sid, room)
         await sio.emit("user_left", {
-            "userId": data['userId'],
-            "name": data['name']
+            "userId": data.get('userId'),
+            "name": data.get('name')
         }, room=room)
     
     # Chat events
@@ -60,14 +71,21 @@ def setup_socketio(app: FastAPI) -> AsyncServer:
     # Emotion events
     @sio.event
     async def emotion_detected(sid, data):
-        room = f"class_{data['classId']}"
-        await sio.emit("emotion_update", {
-            "userId": data['userId'],
-            "emotion": data['emotion'],
-            "confidence": data['confidence'],
-            "timestamp": data['timestamp']
-        }, room=room)
-    
+        payload = {
+            "userId": data.get("userId"),
+            "lessonId": data.get("lessonId"),
+            "classId": data.get("classId"),
+            "emotion": data.get("emotion"),
+            "confidence": data.get("confidence"),
+            "timestamp": data.get("timestamp"),
+        }
+        class_id = str(data.get("classId") or "").strip()
+        lesson_id = str(data.get("lessonId") or "").strip()
+        if class_id:
+            await sio.emit("emotion_update", payload, room=f"class_{class_id}")
+        if lesson_id:
+            await sio.emit("emotion_update", payload, room=f"lesson_{lesson_id}")
+
     # WebRTC signaling
     @sio.event
     async def webrtc_offer(sid, data):
@@ -129,3 +147,22 @@ def setup_socketio(app: FastAPI) -> AsyncServer:
     asgi_app = ASGIApp(sio, app)
     
     return sio
+
+
+async def emit_lesson_emotion_update(payload: dict) -> None:
+    if not sio:
+        return
+    class_id = str(payload.get("classId") or payload.get("class_id") or "").strip()
+    lesson_id = str(payload.get("lessonId") or payload.get("lesson_id") or "").strip()
+    normalized = {
+        "userId": payload.get("userId") or payload.get("user_id"),
+        "lessonId": lesson_id or None,
+        "classId": class_id or None,
+        "emotion": payload.get("emotion") or payload.get("emotion_label"),
+        "confidence": payload.get("confidence"),
+        "timestamp": payload.get("timestamp"),
+    }
+    if class_id:
+        await sio.emit("emotion_update", normalized, room=f"class_{class_id}")
+    if lesson_id:
+        await sio.emit("emotion_update", normalized, room=f"lesson_{lesson_id}")

@@ -50,6 +50,12 @@ class Settings(BaseSettings):
         "audio/aac",
     ]
     model_artifact_path: str = "../ml/artifacts/text_emotion_model.joblib"
+    powerbi_tenant_id: str | None = Field(default=None, validation_alias=AliasChoices("POWERBI_TENANT_ID"))
+    powerbi_client_id: str | None = Field(default=None, validation_alias=AliasChoices("POWERBI_CLIENT_ID"))
+    powerbi_client_secret: str | None = Field(default=None, validation_alias=AliasChoices("POWERBI_CLIENT_SECRET"))
+    powerbi_workspace_id: str | None = Field(default=None, validation_alias=AliasChoices("POWERBI_WORKSPACE_ID"))
+    powerbi_report_id: str | None = Field(default=None, validation_alias=AliasChoices("POWERBI_REPORT_ID"))
+    powerbi_dataset_id: str | None = Field(default=None, validation_alias=AliasChoices("POWERBI_DATASET_ID"))
 
     @field_validator("cors_origins", "allowed_audio_content_types", mode="before")
     @classmethod

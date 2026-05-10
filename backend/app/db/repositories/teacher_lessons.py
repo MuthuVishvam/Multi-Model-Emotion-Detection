@@ -18,6 +18,8 @@ class TeacherLessonRepository(BaseRepository):
         teacher_id: str,
         teacher_email: str | None,
         video_url: str | None,
+        video_embed_url: str | None,
+        media_type: str,
         uploaded_file_name: str | None,
         duration_sec: int,
         resources: list[str],
@@ -31,6 +33,8 @@ class TeacherLessonRepository(BaseRepository):
             "teacher_id": teacher_id,
             "teacher_email": teacher_email,
             "video_url": video_url,
+            "video_embed_url": video_embed_url,
+            "media_type": media_type,
             "uploaded_file_name": uploaded_file_name,
             "duration_sec": max(0, int(duration_sec or 0)),
             "duration": max(0, int(duration_sec or 0)),
@@ -38,7 +42,7 @@ class TeacherLessonRepository(BaseRepository):
             "created_at": now,
             "updated_at": now,
             # Compatibility fields for older frontend flows.
-            "content": video_url or "",
+            "content": video_embed_url or video_url or "",
             "created_by": teacher_email or teacher_id,
         }
         await self.collection.insert_one(document)

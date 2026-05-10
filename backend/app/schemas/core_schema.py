@@ -191,6 +191,7 @@ class EmotionEventIn(BaseModel):
     modality: Literal["face", "text", "voice"]
     emotion_label: EmotionLabel
     confidence: float = Field(ge=0.0, le=1.0)
+    engagement_score: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     timestamp: datetime
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -485,6 +486,8 @@ class LessonManageResponse(BaseModel):
     teacher_id: str
     teacher_email: Optional[EmailStr] = None
     video_url: Optional[str] = None
+    video_embed_url: Optional[str] = None
+    media_type: Optional[str] = None
     uploaded_file_name: Optional[str] = None
     duration_sec: int = 0
     resources: list[str] = Field(default_factory=list)

@@ -8,7 +8,8 @@ import {
   queryMediaPermissionState,
 } from "../services/mediaSupport";
 
-const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
+const LOCAL_MODEL_URL = `${import.meta.env.BASE_URL || "/"}models`;
+const CDN_MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 const DETECTION_INTERVAL_MS = 2000;
 const FLUSH_INTERVAL_MS = 25000;
 const CAMERA_RETRY_DELAY_MS = 900;
@@ -177,6 +178,8 @@ export default function useEmotionTracker({
   const [hasFaceCapture, setHasFaceCapture] = useState(false);
   const [isRequestingCamera, setIsRequestingCamera] = useState(false);
   const [isAnalyzingFaceImage, setIsAnalyzingFaceImage] = useState(false);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [modelLoadError, setModelLoadError] = useState("");
   const [faceStats, setFaceStats] = useState({
     userId: userId || "",
     trackerActive: false,
@@ -239,6 +242,7 @@ export default function useEmotionTracker({
       modality: "face",
       emotion_label: emotionLabel,
       confidence: Number(confidence || 0),
+      engagement_score: Number((Number(confidence || 0) * 100).toFixed(2)),
       timestamp: new Date().toISOString(),
       extra: extra || {},
     };
@@ -303,10 +307,29 @@ export default function useEmotionTracker({
     if (modelsLoadedRef.current) {
       return;
     }
+    setIsModelLoading(true);
+    setModelLoadError("");
     setStatusText("Loading face models...");
-    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
-    modelsLoadedRef.current = true;
+    const candidates = [LOCAL_MODEL_URL, CDN_MODEL_URL];
+    let lastError = null;
+
+    for (const modelUrl of candidates) {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+        await faceapi.nets.faceExpressionNet.loadFromUri(modelUrl);
+        modelsLoadedRef.current = true;
+        setIsModelLoading(false);
+        setModelLoadError("");
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    setIsModelLoading(false);
+    const message = `Face models failed to load. Ensure /models is deployed with face-api.js weights. ${lastError?.message || ""}`.trim();
+    setModelLoadError(message);
+    throw new Error(message);
   }
 
   async function ensureCameraReady() {
@@ -752,6 +775,8 @@ export default function useEmotionTracker({
     hasFaceCapture,
     isRequestingCamera,
     isAnalyzingFaceImage,
+    isModelLoading,
+    modelLoadError,
     canLogFaceEvents: Boolean(userId && (sessionId || liveSessionId)),
     requestCameraPermission,
     captureFaceFromImage,

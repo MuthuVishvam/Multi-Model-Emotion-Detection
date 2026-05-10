@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { LayoutDashboard, Users, BookOpen, Video, Calendar, Filter } from "lucide-react";
+import { io } from "socket.io-client";
+import { LayoutDashboard, Users, BookOpen, Video, Filter, Radio, Download, AlertTriangle, Camera, Mic, Search } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -19,12 +20,20 @@ import {
 
 import {
   fetchClassLessons,
+  buildAnalyticsExportUrl,
   fetchLessonModalityAnalytics,
   fetchLessonOverallAnalytics,
   fetchLessonProgressAnalytics,
   fetchLessonStudentsAnalytics,
   fetchMyClasses,
+  fetchPowerBIEmbedToken,
+  fetchTeacherAnalyticsOverview,
+  fetchTeacherAttendanceAnalytics,
+  fetchTeacherEmotionTrends,
+  fetchTeacherRealtimeAnalytics,
 } from "../services/api";
+import { getRealtimeBaseUrl } from "../services/realtime";
+import { getStoredToken } from "../api/tokenStorage";
 import { CHART_AXIS_COLOR, CHART_GRID_COLOR, getChartColor } from "../chartColors";
 import EmotionFilterBar, {
   buildEmotionFilterOptions,
@@ -96,6 +105,12 @@ export default function TeacherDashboardPage() {
   const [students, setStudents] = useState([]);
   const [progress, setProgress] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [attendance, setAttendance] = useState(null);
+  const [emotionTrends, setEmotionTrends] = useState(null);
+  const [realtime, setRealtime] = useState(null);
+  const [powerBIToken, setPowerBIToken] = useState(null);
+  const [studentSearch, setStudentSearch] = useState("");
 
   const [isLoadingClasses, setIsLoadingClasses] = useState(true);
   const [isLoadingLessons, setIsLoadingLessons] = useState(false);
@@ -194,8 +209,27 @@ export default function TeacherDashboardPage() {
       });
     }
 
-    return rows.sort((a, b) => Number(b.completion_percent || 0) - Number(a.completion_percent || 0));
-  }, [students, progress]);
+    const normalizedSearch = studentSearch.trim().toLowerCase();
+    return rows
+      .filter((row) => {
+        if (!normalizedSearch) return true;
+        return String(row.student_name || "").toLowerCase().includes(normalizedSearch)
+          || String(row.user_id || "").toLowerCase().includes(normalizedSearch);
+      })
+      .sort((a, b) => Number(b.completion_percent || 0) - Number(a.completion_percent || 0));
+  }, [students, progress, studentSearch]);
+
+  const heatmapRows = useMemo(() => {
+    const source = emotionTrends?.timeline?.length ? emotionTrends.timeline : faceTimelineData;
+    const emotionKeys = Object.keys(emotionTrends?.emotion_counts || overall?.emotion_counts || {}).slice(0, 6);
+    return source.slice(-24).map((row) => ({
+      minute: row.minute,
+      values: emotionKeys.map((emotion) => ({
+        emotion,
+        count: Number((row.emotions || {})[emotion] || row[emotion] || 0),
+      })),
+    }));
+  }, [emotionTrends, faceTimelineData, overall]);
 
   async function loadClasses() {
     setIsLoadingClasses(true);
@@ -254,13 +288,18 @@ export default function TeacherDashboardPage() {
 
     setIsLoadingAnalytics(true);
     try {
-      const [overallData, faceData, textData, voiceData, studentData, progressData] = await Promise.all([
+      const [overallData, faceData, textData, voiceData, studentData, progressData, overviewData, attendanceData, trendData, realtimeData, pbiData] = await Promise.all([
         fetchLessonOverallAnalytics(selectedLessonId, filters),
         fetchLessonModalityAnalytics(selectedLessonId, "face", filters),
         fetchLessonModalityAnalytics(selectedLessonId, "text", filters),
         fetchLessonModalityAnalytics(selectedLessonId, "voice", filters),
         fetchLessonStudentsAnalytics(selectedLessonId, filters),
         fetchLessonProgressAnalytics(selectedLessonId, filters),
+        fetchTeacherAnalyticsOverview({ ...filters, lessonId: selectedLessonId }),
+        fetchTeacherAttendanceAnalytics({ ...filters, lessonId: selectedLessonId }),
+        fetchTeacherEmotionTrends({ ...filters, lessonId: selectedLessonId }),
+        fetchTeacherRealtimeAnalytics({ classId: selectedClassId }),
+        fetchPowerBIEmbedToken().catch(() => null),
       ]);
 
       setOverall(overallData);
@@ -269,6 +308,11 @@ export default function TeacherDashboardPage() {
       setVoice(voiceData);
       setStudents(Array.isArray(studentData?.students) ? studentData.students : []);
       setProgress(progressData || null);
+      setOverview(overviewData || null);
+      setAttendance(attendanceData || null);
+      setEmotionTrends(trendData || null);
+      setRealtime(realtimeData || null);
+      setPowerBIToken(pbiData?.accessToken ? pbiData : null);
       setMessage("");
     } catch (error) {
       setOverall(null);
@@ -277,6 +321,9 @@ export default function TeacherDashboardPage() {
       setVoice(null);
       setStudents([]);
       setProgress(null);
+      setOverview(null);
+      setAttendance(null);
+      setEmotionTrends(null);
       setMessage("Failed to load analytics.");
     } finally {
       setIsLoadingAnalytics(false);
@@ -296,6 +343,50 @@ export default function TeacherDashboardPage() {
     loadAnalytics(analyticsFilters);
   }, [selectedClassId, selectedLessonId, isLoadingLessons, selectedEmotion]);
 
+  useEffect(() => {
+    if (!selectedClassId) return undefined;
+    let isMounted = true;
+    const refreshRealtime = async () => {
+      try {
+        const data = await fetchTeacherRealtimeAnalytics({ classId: selectedClassId });
+        if (isMounted) setRealtime(data);
+      } catch {
+        if (isMounted) setRealtime((current) => current);
+      }
+    };
+    refreshRealtime();
+    const timer = setInterval(refreshRealtime, 10000);
+    const socket = io(getRealtimeBaseUrl(), { transports: ["websocket", "polling"] });
+    socket.emit("join_class", { classId: selectedClassId, userId: "teacher-dashboard", name: "Teacher Dashboard" });
+    socket.on("emotion_update", () => refreshRealtime());
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+      socket.disconnect();
+    };
+  }, [selectedClassId]);
+
+  async function handleExportReport() {
+    try {
+      const token = getStoredToken();
+      const response = await fetch(buildAnalyticsExportUrl({ classId: selectedClassId, lessonId: selectedLessonId }), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error("Export failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `teacher-analytics-${selectedLessonId || selectedClassId || "report"}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setMessage("Failed to export analytics report.");
+    }
+  }
+
   function handleApplyFilters() {
     loadAnalytics(analyticsFilters);
   }
@@ -310,9 +401,6 @@ export default function TeacherDashboardPage() {
     <div className="max-w-7xl mx-auto space-y-8 p-4">
       {/* Hero Section */}
       <section className="relative overflow-hidden rounded-[2rem] bg-slate-900 border border-slate-800 text-white p-8 sm:p-12 shadow-2xl">
-        <div className="absolute top-[-50%] right-[-10%] w-96 h-96 bg-brand-500/20 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-[-20%] left-[-10%] w-72 h-72 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none" />
-        
         <div className="relative z-10 max-w-2xl">
           <span className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-800/50 backdrop-blur-md rounded-full text-xs font-bold tracking-widest uppercase mb-6 border border-slate-700">
             <LayoutDashboard className="w-4 h-4 text-brand-400" />
@@ -353,6 +441,23 @@ export default function TeacherDashboardPage() {
           </div>
         </div>
       </section>
+
+      <nav className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3" aria-label="Teacher analytics sections">
+        {[
+          ["Dashboard Overview", "#overview"],
+          ["Live Monitoring", "#live"],
+          ["Student Analytics", "#students"],
+          ["Lesson Analytics", "#lessons"],
+          ["Attendance", "#attendance"],
+          ["Emotion Trends", "#emotions"],
+          ["Power BI", "#powerbi"],
+          ["Export", "#export"],
+        ].map(([label, href]) => (
+          <a key={label} href={href} className="px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white hover:border-brand-500/60 transition-colors text-center">
+            {label}
+          </a>
+        ))}
+      </nav>
 
       <Card>
         <CardHeader>
@@ -434,6 +539,14 @@ export default function TeacherDashboardPage() {
             >
               Clear Dates
             </button>
+            <button
+              id="export"
+              onClick={handleExportReport}
+              disabled={!selectedLessonId}
+              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" /> Export CSV
+            </button>
           </div>
 
           <div className="pt-6 border-t border-slate-800/50">
@@ -468,7 +581,7 @@ export default function TeacherDashboardPage() {
 
       {selectedLessonId && !isLoadingClasses && !isLoadingLessons && (
         <>
-          <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <section id="overview" className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base text-slate-200">Aggregate Emotions</CardTitle>
@@ -491,7 +604,7 @@ export default function TeacherDashboardPage() {
               <div className="absolute top-[-20%] right-[-10%] w-32 h-32 bg-white/10 rounded-full blur-2xl" />
               <h3 className="text-white/80 font-bold uppercase tracking-wider text-sm mb-4">Engagement Score</h3>
               <div className="mt-auto">
-                <p className="text-6xl font-black text-white mb-4">{Number(overall?.engagement_score || 0).toFixed(1)}</p>
+                <p className="text-6xl font-black text-white mb-4">{Number(overview?.average_engagement_score ?? overall?.engagement_score ?? 0).toFixed(1)}</p>
                 <div className="text-white/80 text-sm font-medium mb-1">Dominant Status: <span className="font-bold text-white uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded ml-2">{overall?.dominant_emotion || "neutral"}</span></div>
                 <div className="text-white/60 text-xs">Based on {overall?.total_events || 0} telemetry events</div>
               </div>
@@ -545,7 +658,28 @@ export default function TeacherDashboardPage() {
             </Card>
           </section>
 
-          <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <section id="live" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+            {[
+              ["Attention", `${Number(realtime?.current_attention_score || 0).toFixed(1)}%`, Radio, "text-emerald-300"],
+              ["Active students", realtime?.active_students || 0, Users, "text-sky-300"],
+              ["Cameras", realtime?.active_cameras || 0, Camera, "text-indigo-300"],
+              ["Microphones", realtime?.active_microphones || 0, Mic, "text-violet-300"],
+              ["Low engagement", realtime?.low_engagement_alerts || 0, AlertTriangle, "text-amber-300"],
+              ["Confusion", realtime?.confusion_alerts || 0, AlertTriangle, "text-red-300"],
+            ].map(([label, value, Icon, color]) => (
+              <Card key={label}>
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
+                    <Icon className={`w-5 h-5 ${color}`} />
+                  </div>
+                  <p className="text-3xl font-black text-white">{value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+
+          <section id="lessons" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2 text-slate-200"><Video className="w-4 h-4 text-brand-400" /> WebRTC Facial</CardTitle>
@@ -604,7 +738,7 @@ export default function TeacherDashboardPage() {
             </Card>
           </section>
 
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <section id="emotions" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base text-slate-200">Temporal Emotion Trace</CardTitle>
@@ -622,6 +756,24 @@ export default function TeacherDashboardPage() {
                       <Line key={emotion} type="monotone" dataKey={emotion} stroke={getChartColor(emotion, index + 1)} strokeWidth={2} dot={false} />
                     ))}
                   </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card id="attendance">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-slate-200">Attendance Graph</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={attendance?.lessons || []}>
+                    <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="lesson_id" stroke={CHART_AXIS_COLOR} tick={{fontSize: 11}} axisLine={false} tickLine={false} />
+                    <YAxis stroke={CHART_AXIS_COLOR} tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                    <Bar dataKey="students_attended" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="completed" fill="#34d399" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
@@ -650,11 +802,49 @@ export default function TeacherDashboardPage() {
             </Card>
           </section>
 
-          <Card className="overflow-hidden border-slate-800/80">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-slate-200">Emotion Heatmap Timeline</CardTitle>
+              <CardDescription>Recent timeline buckets by emotion intensity.</CardDescription>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <div className="min-w-[720px] space-y-2">
+                {heatmapRows.map((row) => (
+                  <div key={row.minute} className="grid grid-cols-[170px_repeat(6,minmax(60px,1fr))] gap-2 items-center">
+                    <div className="text-xs text-slate-500">{row.minute}</div>
+                    {row.values.map((cell, index) => (
+                      <div
+                        key={`${row.minute}-${cell.emotion}`}
+                        title={`${cell.emotion}: ${cell.count}`}
+                        className="h-8 rounded-md border border-slate-800 flex items-center justify-center text-[10px] font-bold uppercase text-white/80"
+                        style={{ backgroundColor: `${getChartColor(cell.emotion, index)}${Math.min(95, 20 + cell.count * 12).toString(16).padStart(2, "0")}` }}
+                      >
+                        {cell.count ? cell.emotion.slice(0, 4) : ""}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {heatmapRows.length === 0 && <p className="text-sm text-slate-500">No emotion timeline data available.</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="students" className="overflow-hidden border-slate-800/80">
             <CardHeader className="bg-slate-900/50 border-b border-slate-800 pb-5">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg text-white">Student Mastery Roster</CardTitle>
-                <span className="px-3 py-1 bg-brand-500/20 text-brand-400 border border-brand-500/20 text-xs font-bold rounded-full uppercase tracking-wider">{students.length} Enrolled</span>
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      value={studentSearch}
+                      onChange={(event) => setStudentSearch(event.target.value)}
+                      placeholder="Search students"
+                      className="pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 outline-none focus:border-brand-500"
+                    />
+                  </div>
+                  <span className="px-3 py-1 bg-brand-500/20 text-brand-400 border border-brand-500/20 text-xs font-bold rounded-full uppercase tracking-wider">{studentTableRows.length} Students</span>
+                </div>
               </div>
             </CardHeader>
             <div className="overflow-x-auto">
@@ -714,12 +904,13 @@ export default function TeacherDashboardPage() {
             </div>
           </Card>
           
-          <div className="mt-8 mb-12">
+          <div id="powerbi" className="mt-8 mb-12">
             <PowerBIDashboard 
               title="Enterprise Power BI Data Warehouse" 
-              reportId={null} 
-              embedUrl={null} 
-              accessToken={null} 
+              reportId={powerBIToken?.reportId} 
+              embedUrl={powerBIToken?.embedUrl} 
+              accessToken={powerBIToken?.accessToken}
+              tokenType={powerBIToken?.tokenType}
               activeFilters={
                 selectedEmotion ? [{
                   $schema: "http://powerbi.com/product/schema#basic",

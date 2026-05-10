@@ -1,19 +1,30 @@
-﻿fastapi==0.115.8
+# Production API dependencies for Render Python 3.11.9.
+# Keep aiortc/av out of this file so Render does not compile FFmpeg/libav.
+fastapi==0.115.8
 uvicorn[standard]==0.34.0
 motor==3.7.0
-python-jose[cryptography]==3.3.0
-passlib==1.7.4
-pydantic-settings==2.8.1
 pymongo==4.11.1
-email-validator==2.2.0
-scikit-learn==1.6.1
-joblib==1.4.2
-pytest==8.3.5
-httpx==0.28.1
+pydantic==2.10.6
+pydantic-settings==2.8.1
+python-dotenv==1.0.0
 python-multipart==0.0.20
-librosa==0.10.2.post1
-soundfile==0.12.1
+email-validator==2.2.0
+
+# Auth and crypto
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+cryptography==42.0.2
+google-auth==2.28.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.0
+
+# Realtime signaling, HTTP clients, and integrations
 python-socketio==5.10.0
+python-engineio==4.8.0
 aiohttp==3.9.1
-aiortc==1.6.0
-opencv-python-headless==4.8.1.78
+httpx==0.28.1
+requests==2.32.3
+
+# Lightweight model artifact loading only. Heavy ML is optional; see requirements-ml.txt.
+joblib==1.4.2

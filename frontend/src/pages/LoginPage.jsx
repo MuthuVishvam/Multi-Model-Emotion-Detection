@@ -120,7 +120,7 @@ export default function LoginPage() {
 
         <form className="space-y-4" onSubmit={handleSubmit} noValidate>
           <div>
-            <label htmlFor="login-identifier" className="block text-sm font-semibold text-slate-700">
+            <label htmlFor="login-identifier" className="block text-sm font-semibold text-slate-300">
               Email Address
             </label>
             <input
@@ -139,12 +139,12 @@ export default function LoginPage() {
 
           <div>
             <div className="flex items-center justify-between gap-3">
-              <label htmlFor="login-password" className="block text-sm font-semibold text-slate-700">
+              <label htmlFor="login-password" className="block text-sm font-semibold text-slate-300">
                 Password
               </label>
               <a
                 href="mailto:support@emotisense.ai?subject=MELD%20password%20reset"
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                className="text-sm font-medium text-brand-300 hover:text-brand-200 transition-colors"
               >
                 Forgot password?
               </a>
@@ -169,7 +169,7 @@ export default function LoginPage() {
               animate={{ opacity: 1, height: "auto" }}
               id="login-error"
               role="alert"
-              className="rounded-xl border border-red-200 bg-red-50/80 backdrop-blur-sm px-4 py-3 text-sm text-red-600"
+              className="rounded-xl border border-red-500/40 bg-red-950/40 backdrop-blur-sm px-4 py-3 text-sm text-red-200"
             >
               {errorText}
             </motion.p>
@@ -185,9 +185,9 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-slate-500 mt-6 pt-4">
+        <p className="text-center text-sm text-slate-400 mt-6 pt-4">
           New to MELD Learn?{" "}
-          <Link to="/register" className="font-semibold text-blue-600 hover:text-indigo-600 transition-colors">
+          <Link to="/register" className="font-semibold text-brand-300 hover:text-brand-200 transition-colors">
             Create an account
           </Link>
         </p>

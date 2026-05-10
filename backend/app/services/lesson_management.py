@@ -11,6 +11,7 @@ from app.db.repositories.class_members import class_member_repository
 from app.db.repositories.classes import class_repository
 from app.db.repositories.lesson_assignments import lesson_assignment_repository
 from app.db.repositories.teacher_lessons import teacher_lesson_repository
+from app.utils.lesson_media import normalize_lesson_media_url
 
 
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "lessons"
@@ -92,7 +93,13 @@ class LessonManagementService:
             created_by_value = lesson_doc.get("created_by")
             if isinstance(created_by_value, str) and "@" in created_by_value:
                 teacher_email = created_by_value
-        video_url = lesson_doc.get("video_url") or lesson_doc.get("videoUrl") or lesson_doc.get("content")
+        raw_video_url = lesson_doc.get("video_url") or lesson_doc.get("videoUrl")
+        stored_content = lesson_doc.get("content")
+        media = normalize_lesson_media_url(raw_video_url or stored_content)
+        video_url = media.get("source_url")
+        video_embed_url = lesson_doc.get("video_embed_url") or lesson_doc.get("videoEmbedUrl") or media.get("embed_url")
+        playable_url = video_embed_url or media.get("playable_url") or stored_content
+        media_type = lesson_doc.get("media_type") or lesson_doc.get("mediaType") or media.get("media_type") or "link"
         duration_value = lesson_doc.get("duration_sec")
         if duration_value is None:
             duration_value = lesson_doc.get("durationSec")
@@ -108,10 +115,12 @@ class LessonManagementService:
             "teacher_id": teacher_id,
             "teacher_email": teacher_email,
             "video_url": video_url,
+            "video_embed_url": video_embed_url,
+            "media_type": media_type,
             "uploaded_file_name": lesson_doc.get("uploaded_file_name") or lesson_doc.get("uploadedFileName"),
             "duration_sec": int(duration_value or 0),
             "resources": resources,
-            "content": lesson_doc.get("content") or video_url,
+            "content": playable_url,
             "created_by": created_by,
             "created_at": created_at,
             "assignments": [self._serialize_assignment(row) for row in (assignments or [])],
@@ -165,13 +174,16 @@ class LessonManagementService:
             )
 
         resources = self._parse_resources(resources_raw)
+        media = normalize_lesson_media_url(video_url_clean)
         lesson_doc = await teacher_lesson_repository.create_lesson(
             title=title_clean,
             description=description_clean,
             course_id=course_id_clean,
             teacher_id=teacher_user["id"],
             teacher_email=teacher_user.get("email"),
-            video_url=video_url_clean,
+            video_url=media.get("source_url"),
+            video_embed_url=media.get("embed_url"),
+            media_type=str(media.get("media_type") or "link"),
             uploaded_file_name=uploaded_file_name,
             duration_sec=int(duration_sec or 0),
             resources=resources,
@@ -231,6 +243,7 @@ class LessonManagementService:
         else:
             duration_clean = max(0, int(duration_sec))
         resources = self._parse_resources(resources_raw) if resources_raw is not None else existing_resources
+        media = normalize_lesson_media_url(video_url_clean)
 
         updated = await teacher_lesson_repository.update_lesson(
             lesson_id,
@@ -238,12 +251,14 @@ class LessonManagementService:
                 "title": title_clean,
                 "description": description_clean,
                 "course_id": course_id_clean,
-                "video_url": video_url_clean,
+                "video_url": media.get("source_url"),
+                "video_embed_url": media.get("embed_url"),
+                "media_type": media.get("media_type") or "link",
                 "uploaded_file_name": uploaded_file_name,
                 "duration_sec": duration_clean,
                 "duration": duration_clean,
                 "resources": resources,
-                "content": video_url_clean,
+                "content": media.get("playable_url") or video_url_clean,
             },
         )
         if not updated:

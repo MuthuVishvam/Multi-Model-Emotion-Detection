@@ -27,7 +27,7 @@ export default function OAuthButton({ onClick, disabled = false }) {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      className="safe-button-secondary flex w-full items-center justify-center gap-3 rounded-xl px-4 py-3 text-sm"
     >
       <GoogleMark />
       <span>Sign in with Google</span>

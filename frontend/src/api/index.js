@@ -403,6 +403,33 @@ function buildAnalyticsQuery({ classId = "", startAt = "", endAt = "", emotionLa
   return query ? `?${query}` : "";
 }
 
+function buildTeacherAnalyticsQuery({
+  classId = "",
+  lessonId = "",
+  studentId = "",
+  liveSessionId = "",
+  startAt = "",
+  endAt = "",
+  emotionLabel = "",
+  search = "",
+  page = "",
+  limit = "",
+} = {}) {
+  const params = new URLSearchParams();
+  if (classId) params.set("class_id", classId);
+  if (lessonId) params.set("lesson_id", lessonId);
+  if (studentId) params.set("student_id", studentId);
+  if (liveSessionId) params.set("live_session_id", liveSessionId);
+  if (startAt) params.set("start_at", startAt);
+  if (endAt) params.set("end_at", endAt);
+  if (emotionLabel) params.set("emotion_label", emotionLabel);
+  if (search) params.set("search", search);
+  if (page) params.set("page", String(page));
+  if (limit) params.set("limit", String(limit));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export async function fetchLessonOverallAnalytics(lessonId, filters = {}) {
   const token = localStorage.getItem("token") || "";
   const query = buildAnalyticsQuery(filters);
@@ -425,6 +452,58 @@ export async function fetchLessonProgressAnalytics(lessonId, filters = {}) {
   const token = localStorage.getItem("token") || "";
   const query = buildAnalyticsQuery(filters);
   return apiRequest(`/analytics/lesson/${lessonId}/progress${query}`, "GET", null, token);
+}
+
+export async function fetchTeacherAnalyticsOverview(filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/overview${query}`, "GET", null, token);
+}
+
+export async function fetchTeacherAnalyticsLessons(filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/lessons${query}`, "GET", null, token);
+}
+
+export async function fetchTeacherAnalyticsStudents(filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/students${query}`, "GET", null, token);
+}
+
+export async function fetchTeacherRealtimeAnalytics(filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/realtime${query}`, "GET", null, token);
+}
+
+export async function fetchTeacherAttendanceAnalytics(filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/attendance${query}`, "GET", null, token);
+}
+
+export async function fetchTeacherEmotionTrends(filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/emotions${query}`, "GET", null, token);
+}
+
+export async function fetchStudentAnalytics(studentId, filters = {}) {
+  const token = getStoredToken();
+  const query = buildTeacherAnalyticsQuery(filters);
+  return apiRequest(`/analytics/student/${studentId}${query}`, "GET", null, token);
+}
+
+export async function fetchPowerBIEmbedToken(reportId = "") {
+  const token = getStoredToken();
+  const query = reportId ? `?report_id=${encodeURIComponent(reportId)}` : "";
+  return apiRequest(`/analytics/powerbi/embed-token${query}`, "GET", null, token);
+}
+
+export function buildAnalyticsExportUrl(filters = {}) {
+  return buildApiUrl(`/analytics/export${buildTeacherAnalyticsQuery(filters)}`);
 }
 
 export async function updateLessonProgress(lessonId, payload) {

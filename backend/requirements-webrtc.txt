@@ -1,0 +1,6 @@
+# Optional server-side WebRTC dependencies.
+# Install only on paid instances or Docker images that truly need Python media handling.
+# The main Render service does browser/WebRTC signaling through Socket.IO without these.
+--only-binary=av,aiortc
+av==12.3.0
+aiortc==1.9.0

@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: meld-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: python -m pip install --upgrade pip setuptools wheel && pip install --only-binary=:all: -r requirements.txt
+    startCommand: uvicorn app.main:application --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PIP_NO_CACHE_DIR
+        value: "1"
+      - key: RELOAD
+        value: "0"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MONGODB_URI
+        sync: false
+      - key: DB_NAME
+        value: emotion_platform
+      - key: JWT_SECRET
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: POWERBI_TENANT_ID
+        sync: false
+      - key: POWERBI_CLIENT_ID
+        sync: false
+      - key: POWERBI_CLIENT_SECRET
+        sync: false
+      - key: POWERBI_WORKSPACE_ID
+        sync: false
+      - key: POWERBI_REPORT_ID
+        sync: false
+      - key: POWERBI_DATASET_ID
+        sync: false

@@ -3,7 +3,7 @@ import { PowerBIEmbed } from 'powerbi-client-react';
 import { models } from 'powerbi-client';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 
-export default function PowerBIDashboard({ reportId, embedUrl, accessToken, title = "Advanced Analytics", activeFilters = [] }) {
+export default function PowerBIDashboard({ reportId, embedUrl, accessToken, tokenType = "Embed", title = "Advanced Analytics", activeFilters = [] }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const reportRef = useRef(null);
@@ -77,7 +77,7 @@ export default function PowerBIDashboard({ reportId, embedUrl, accessToken, titl
                 id: reportId || 'dummy-report-id',
                 embedUrl: embedUrl || 'https://app.powerbi.com/reportEmbed?reportId=dummy',
                 accessToken: accessToken || 'dummy-token',
-                tokenType: models.TokenType.Aad,
+                tokenType: tokenType === "Aad" ? models.TokenType.Aad : models.TokenType.Embed,
                 settings: {
                   panes: {
                     filters: { expanded: false, visible: false },

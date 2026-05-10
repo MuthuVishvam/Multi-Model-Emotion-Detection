@@ -143,6 +143,11 @@ async def ensure_platform_indexes() -> None:
     await _create_index_safe(db.emotion_events, [("class_id", ASCENDING), ("lesson_id", ASCENDING)], name="emotion_events_class_lesson")
     await _create_index_safe(db.emotion_events, [("lesson_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_lesson_id_timestamp")
     await _create_index_safe(db.emotion_events, [("lesson_id", ASCENDING), ("modality", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_lesson_modality_timestamp")
+    await _create_index_safe(db.emotion_events, [("teacher_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_teacher_timestamp")
+    await _create_index_safe(db.emotion_events, [("student_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_student_id_timestamp")
+    await _create_index_safe(db.emotion_events, [("emotion", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_emotion_timestamp")
+    await _create_index_safe(db.emotion_events, [("emotion_label", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_emotion_label_timestamp")
+    await _create_index_safe(db.emotion_events, [("engagement_score", DESCENDING), ("timestamp", DESCENDING)], name="emotion_events_engagement_timestamp")
     await _create_index_safe(db.emotion_events, [("live_session_id", ASCENDING), ("timestamp", DESCENDING)], name="emotion_events_live_session_timestamp")
     await _create_index_safe(
         db.emotion_events,
@@ -211,6 +216,8 @@ async def ensure_platform_indexes() -> None:
     await _create_index_safe(db.notifications, [("to_user_id", ASCENDING), ("created_at", DESCENDING)], name="notifications_to_user_created_at")
 
     await _create_index_safe(db.attention_events, [("lesson_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_lesson_timestamp")
+    await _create_index_safe(db.attention_events, [("student_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_student_id_timestamp")
+    await _create_index_safe(db.attention_events, [("state", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_state_timestamp")
     await _create_index_safe(db.attention_events, [("user_id", ASCENDING), ("lesson_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_user_lesson_timestamp")
     await _create_index_safe(db.attention_events, [("session_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_session_timestamp")
     await _create_index_safe(db.attention_events, [("live_session_id", ASCENDING), ("timestamp", DESCENDING)], name="attention_events_live_session_timestamp")

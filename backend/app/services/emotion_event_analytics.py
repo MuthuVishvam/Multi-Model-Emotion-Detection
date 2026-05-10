@@ -297,6 +297,11 @@ class EmotionEventAnalyticsService:
                 "modality": event.get("modality"),
                 "emotion_label": event.get("emotion_label"),
                 "confidence": float(event.get("confidence") or 0.0),
+                "engagement_score": float(
+                    event.get("engagement_score")
+                    if event.get("engagement_score") is not None
+                    else (float(event.get("confidence") or 0.0) * 100.0)
+                ),
                 "timestamp": event.get("timestamp") or now,
                 "extra": event.get("extra") or {},
                 "created_at": now,

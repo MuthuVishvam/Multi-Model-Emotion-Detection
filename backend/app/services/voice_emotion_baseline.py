@@ -5,9 +5,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import librosa
-import numpy as np
-
 
 EMOTION_LABELS = ("stress", "boredom", "neutral", "interest")
 
@@ -26,7 +23,10 @@ class VoiceEmotionBaselineService:
     TODO: replace with a trained production voice emotion model when available.
     """
 
-    def _extract_features(self, audio: np.ndarray, sample_rate: int) -> dict[str, float]:
+    def _extract_features(self, audio, sample_rate: int) -> dict[str, float]:
+        import librosa
+        import numpy as np
+
         if audio.size == 0:
             raise ValueError("Audio is empty")
 
@@ -55,9 +55,26 @@ class VoiceEmotionBaselineService:
         return float(max(0.0, min(1.0, value)))
 
     def _normalize_scores(self, raw_scores: dict[str, float]) -> dict[str, float]:
+        import numpy as np
+
         exps = {label: float(np.exp(score)) for label, score in raw_scores.items()}
         denom = sum(exps.values()) or 1.0
         return {label: exps[label] / denom for label in raw_scores}
+
+    @staticmethod
+    def _neutral_fallback(audio_bytes: bytes) -> VoiceEmotionPrediction:
+        size_kb = len(audio_bytes) / 1024.0
+        duration_guess = max(0.1, min(30.0, size_kb / 16.0))
+        return VoiceEmotionPrediction(
+            emotion="neutral",
+            confidence=0.5,
+            scores={"neutral": 0.5, "interest": 0.2, "boredom": 0.15, "stress": 0.15},
+            features={
+                "duration_seconds": duration_guess,
+                "fallback": 1.0,
+                "audio_size_bytes": float(len(audio_bytes)),
+            },
+        )
 
     def _classify_from_features(self, features: dict[str, float]) -> tuple[str, float, dict[str, float]]:
         energy = self._clip_0_1((features["rms"] - 0.02) / 0.1)
@@ -91,6 +108,8 @@ class VoiceEmotionBaselineService:
             temp_path = tmp_file.name
 
         try:
+            import librosa
+
             audio, sample_rate = librosa.load(temp_path, sr=16000, mono=True)
             if audio.size == 0:
                 raise ValueError("Could not decode audio data")
@@ -106,6 +125,8 @@ class VoiceEmotionBaselineService:
             )
         except ValueError:
             raise
+        except ImportError:
+            return self._neutral_fallback(audio_bytes)
         except Exception as exc:
             raise ValueError("Unable to process audio file. Try recording again in Chrome.") from exc
         finally:

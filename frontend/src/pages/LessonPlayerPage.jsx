@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { io } from "socket.io-client";
 
 import {
   apiRequest,
-  buildApiUrl,
   fetchClassLessons,
+  fetchLessonById,
   fetchLessonComments,
   fetchLessonVoiceFeedback,
   updateLessonProgress,
@@ -14,6 +15,8 @@ import { getAllCourseLessons, getCourseById, getLessonById } from "../courseCata
 import useAttentionTracker from "../hooks/useAttentionTracker";
 import useEmotionTracker from "../hooks/useEmotionTracker";
 import useWatchTimeTracker from "../hooks/useWatchTimeTracker";
+import { inferLessonMedia } from "../utils/lessonMedia";
+import { getRealtimeBaseUrl } from "../services/realtime";
 
 const LESSON_COMPLETION_RULES = {
   watchThresholdPercent: 90,
@@ -55,57 +58,6 @@ function parseLessonDurationSeconds(lesson) {
   return 0;
 }
 
-function extractYouTubeVideoId(urlString) {
-  if (!urlString) {
-    return "";
-  }
-
-  try {
-    const url = new URL(urlString);
-    const host = url.hostname.replace(/^www\./, "");
-
-    if (host === "youtu.be") {
-      return url.pathname.split("/").filter(Boolean)[0] || "";
-    }
-
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      if (url.pathname === "/watch") {
-        return url.searchParams.get("v") || "";
-      }
-      if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/live/")) {
-        return url.pathname.split("/").filter(Boolean)[1] || "";
-      }
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
-}
-
-function inferLessonMedia(url) {
-  if (!url) {
-    return { type: "none" };
-  }
-
-  const sourceUrl = String(url || "").trim();
-  const youtubeId = extractYouTubeVideoId(url);
-  if (youtubeId) {
-    return {
-      type: "youtube",
-      src: `https://www.youtube.com/embed/${youtubeId}`,
-    };
-  }
-
-  const src = sourceUrl.startsWith("/") ? buildApiUrl(sourceUrl) : sourceUrl;
-  const lower = sourceUrl.toLowerCase();
-  if (/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/.test(lower)) {
-    return { type: "video", src };
-  }
-
-  return { type: "link", src };
-}
-
 function buildTimelineRows(lesson) {
   if (!lesson) {
     return [];
@@ -128,7 +80,10 @@ function mapAssignedLesson(lesson, index) {
     lesson_id: String(lesson.lesson_id ?? lesson.lessonId ?? `class-lesson-${index + 1}`),
     title: lesson.title || `Lesson ${index + 1}`,
     description: lesson.description || "Assigned lesson",
-    content: lesson.video_url || lesson.videoUrl || lesson.content || "",
+    content: lesson.video_embed_url || lesson.video_url || lesson.videoUrl || lesson.content || "",
+    video_url: lesson.video_url || lesson.videoUrl || "",
+    video_embed_url: lesson.video_embed_url || lesson.videoEmbedUrl || "",
+    media_type: lesson.media_type || lesson.mediaType || "",
     duration: durationSec > 0 ? `${Math.max(1, Math.round(durationSec / 60))} min` : "10 min",
     resources: Array.isArray(lesson.resources) && lesson.resources.length > 0
       ? lesson.resources
@@ -299,6 +254,8 @@ function ResourcesPanel({
           Buffered detections: {tracker.queueSize}
           {tracker.lastEmotion ? ` | Last: ${tracker.lastEmotion} (${Math.round(tracker.lastConfidence * 100)}%)` : ""}
         </p>
+        {tracker.isModelLoading && <p className="small-note">Loading face-api.js models...</p>}
+        {tracker.modelLoadError && <p className="small-note">{tracker.modelLoadError}</p>}
         {tracker.flushError && <p className="small-note">Batch upload retrying: {tracker.flushError}</p>}
         {tracker.faceEventsSent > 0 && (
           <p className="small-note">Face events sent: {tracker.faceEventsSent}</p>
@@ -372,6 +329,13 @@ export default function LessonPlayerPage({ user }) {
   const [lessonsFromApi, setLessonsFromApi] = useState([]);
   const [classLessonsFromApi, setClassLessonsFromApi] = useState([]);
   const [courseLoadError, setCourseLoadError] = useState("");
+  const [isLoadingLessons, setIsLoadingLessons] = useState(true);
+  const [realtimeStatus, setRealtimeStatus] = useState({
+    connected: false,
+    lastEmotion: "",
+    confidence: 0,
+    updatedAt: "",
+  });
   const [openModules, setOpenModules] = useState({});
   const [activeTab, setActiveTab] = useState("notes");
   const [lessonStarted, setLessonStarted] = useState(false);
@@ -423,7 +387,7 @@ export default function LessonPlayerPage({ user }) {
     () => getLessonById(course, lessonId) || allCourseLessons[0] || null,
     [course, lessonId, allCourseLessons]
   );
-  const selectedMedia = useMemo(() => inferLessonMedia(selectedLesson?.content || ""), [selectedLesson]);
+  const selectedMedia = useMemo(() => inferLessonMedia(selectedLesson), [selectedLesson]);
   const timelineRows = useMemo(() => buildTimelineRows(selectedLesson), [selectedLesson]);
   const selectedLessonDurationSec = useMemo(
     () => parseLessonDurationSeconds(selectedLesson),
@@ -545,9 +509,14 @@ export default function LessonPlayerPage({ user }) {
 
     async function loadLessons() {
       const token = localStorage.getItem("token") || "";
+      setIsLoadingLessons(true);
       try {
         if (classId) {
-          const data = await fetchClassLessons(classId);
+          let data = await fetchClassLessons(classId);
+          if ((!Array.isArray(data) || data.length === 0) && lessonId) {
+            const singleLesson = await fetchLessonById(lessonId, classId);
+            data = singleLesson ? [singleLesson] : [];
+          }
           if (!isMounted) {
             return;
           }
@@ -568,7 +537,13 @@ export default function LessonPlayerPage({ user }) {
         if (!isMounted) {
           return;
         }
+        setLessonsFromApi([]);
+        setClassLessonsFromApi([]);
         setCourseLoadError(error.message);
+      } finally {
+        if (isMounted) {
+          setIsLoadingLessons(false);
+        }
       }
     }
 
@@ -576,7 +551,7 @@ export default function LessonPlayerPage({ user }) {
     return () => {
       isMounted = false;
     };
-  }, [classId]);
+  }, [classId, lessonId]);
 
   useEffect(() => {
     const lessonKey = selectedLesson ? String(selectedLesson.lesson_id || "") : "";
@@ -654,6 +629,45 @@ export default function LessonPlayerPage({ user }) {
     localStorage.setItem(key, notesValue);
   }, [course, selectedLesson, notesValue]);
 
+  useEffect(() => {
+    const lessonKey = selectedLesson ? String(selectedLesson.lesson_id || "") : "";
+    if (!lessonKey) {
+      setRealtimeStatus({ connected: false, lastEmotion: "", confidence: 0, updatedAt: "" });
+      return undefined;
+    }
+
+    const socket = io(getRealtimeBaseUrl(), { transports: ["websocket", "polling"] });
+    socket.on("connect", () => {
+      setRealtimeStatus((current) => ({ ...current, connected: true }));
+      socket.emit("join_lesson", { lessonId: lessonKey, classId: classId || null });
+      if (classId) {
+        socket.emit("join_class", {
+          classId,
+          userId: user?.id || user?.email || "student",
+          name: user?.full_name || user?.username || user?.email || "Student",
+        });
+      }
+    });
+    socket.on("disconnect", () => {
+      setRealtimeStatus((current) => ({ ...current, connected: false }));
+    });
+    socket.on("emotion_update", (payload) => {
+      if (String(payload?.lessonId || "") !== lessonKey) {
+        return;
+      }
+      setRealtimeStatus({
+        connected: true,
+        lastEmotion: payload?.emotion || "",
+        confidence: Number(payload?.confidence || 0),
+        updatedAt: payload?.timestamp || new Date().toISOString(),
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [selectedLesson?.lesson_id, classId, user?.id, user?.email, user?.full_name, user?.username]);
+
   function toggleModule(moduleId) {
     setOpenModules((current) => ({ ...current, [moduleId]: !current[moduleId] }));
   }
@@ -669,9 +683,20 @@ export default function LessonPlayerPage({ user }) {
     navigate(`/student/courses/${course.id}/lessons/${nextLessonId}`);
   }
 
-  function handleStartLesson() {
+  async function handleStartLesson() {
+    let activeSessionId = sessionId;
+    if (!activeSessionId) {
+      activeSessionId = await startSession();
+    }
+    if (!activeSessionId) {
+      setStatusMessage("Unable to start lesson session. Check your connection and try again.");
+      return;
+    }
     if (!lessonStarted) {
       setLessonStarted(true);
+    }
+    if (!emotionTracker.trackingEnabled) {
+      emotionTracker.setTrackingEnabled(true);
     }
     emotionTracker.handleLessonPlay();
   }
@@ -734,16 +759,19 @@ export default function LessonPlayerPage({ user }) {
         },
         token
       );
-      setSessionId(data.id);
+      const nextSessionId = data.id || data.session_id || "";
+      setSessionId(nextSessionId);
       setTextFeedbackSent(false);
       setAudioFeedbackSent(false);
       setCompletionSaved(false);
       setCompletionMessage("");
       completionMarkedRef.current = false;
       lastProgressSyncRef.current = 0;
-      setStatusMessage(`Session started: ${data.id}`);
+      setStatusMessage(`Session started: ${nextSessionId}`);
+      return nextSessionId;
     } catch (error) {
       setStatusMessage(error.message);
+      return "";
     }
   }
 
@@ -861,12 +889,28 @@ export default function LessonPlayerPage({ user }) {
     void syncLessonProgress({ force: true, completedOverride: true });
   }, [lessonCompleted, sessionId, selectedLesson?.lesson_id]);
 
+  if (isLoadingLessons) {
+    return (
+      <div className="learning-page p-4">
+        <div className="glass-panel rounded-2xl p-8 min-h-[420px] flex flex-col justify-center">
+          <div className="h-7 w-56 bg-slate-800 rounded-lg animate-pulse mb-5" />
+          <div className="aspect-video w-full bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
+            <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
+            <div className="h-24 bg-slate-900 rounded-xl border border-slate-800 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!course) {
     return (
       <div className="learning-page">
         <div className="card empty-state">
-          <h2>Course not found</h2>
-          <p>Open the course catalog and select a valid course.</p>
+          <h2>{courseLoadError ? "Lesson unavailable" : "Course not found"}</h2>
+          <p>{courseLoadError || "Open the course catalog and select a valid course."}</p>
           <Link className="button-link" to="/student">Back to catalog</Link>
         </div>
       </div>
@@ -993,6 +1037,32 @@ export default function LessonPlayerPage({ user }) {
                     </span>
                   </div>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-4">
+                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Camera</p>
+                    <p className="text-sm font-bold text-slate-200 mt-1">
+                      {emotionTracker.cameraState === "on" ? "Preview active" : "Waiting for permission"}
+                    </p>
+                  </div>
+                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Emotion</p>
+                    <p className="text-sm font-bold text-slate-200 mt-1">
+                      {emotionTracker.lastEmotion || realtimeStatus.lastEmotion || "Not detected yet"}
+                    </p>
+                  </div>
+                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Confidence</p>
+                    <p className="text-sm font-bold text-slate-200 mt-1">
+                      {Math.round(Number(emotionTracker.lastConfidence || realtimeStatus.confidence || 0) * 100)}%
+                    </p>
+                  </div>
+                  <div className="glass-panel rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Realtime</p>
+                    <p className={`text-sm font-bold mt-1 ${realtimeStatus.connected ? "text-emerald-300" : "text-slate-400"}`}>
+                      {realtimeStatus.connected ? "Connected" : "Reconnecting"}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* TABS & DESCRIPTION */}
@@ -1061,24 +1131,24 @@ export default function LessonPlayerPage({ user }) {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className={`p-4 rounded-xl border flex flex-col gap-2 ${faceEmotionCaptured ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
                         <span className="text-xs font-bold uppercase tracking-wider">Face</span>
-                        <span className="text-xl">{faceEmotionCaptured ? "✅" : "⏳"}</span>
+                        <span className="text-sm font-bold">{faceEmotionCaptured ? "Done" : "Waiting"}</span>
                       </div>
                       <div className={`p-4 rounded-xl border flex flex-col gap-2 ${textFeedbackSent ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
                         <span className="text-xs font-bold uppercase tracking-wider">Text</span>
-                        <span className="text-xl">{textFeedbackSent ? "✅" : "⏳"}</span>
+                        <span className="text-sm font-bold">{textFeedbackSent ? "Done" : "Waiting"}</span>
                       </div>
                       <div className={`p-4 rounded-xl border flex flex-col gap-2 ${audioFeedbackSent ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
                         <span className="text-xs font-bold uppercase tracking-wider">Audio</span>
-                        <span className="text-xl">{audioFeedbackSent ? "✅" : "⏳"}</span>
+                        <span className="text-sm font-bold">{audioFeedbackSent ? "Done" : "Waiting"}</span>
                       </div>
                       <div className={`p-4 rounded-xl border flex flex-col gap-2 ${watchProgressCompleted ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-slate-800/50 border-slate-700/50 text-slate-500"}`}>
                         <span className="text-xs font-bold uppercase tracking-wider">Watch</span>
-                        <span className="text-xl">{watchProgressCompleted ? "✅" : "⏳"}</span>
+                        <span className="text-sm font-bold">{watchProgressCompleted ? "Done" : "Waiting"}</span>
                       </div>
                     </div>
                     {(lessonCompleted || completionSaved) && (
                       <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-center py-4 rounded-xl font-bold shadow-lg shadow-emerald-500/10 animate-pulse mt-4">
-                        Lesson Completed! 🎉
+                        Lesson completed successfully.
                       </div>
                     )}
                   </div>

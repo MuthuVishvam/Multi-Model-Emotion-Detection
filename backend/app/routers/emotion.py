@@ -26,6 +26,7 @@ from app.services.live_class_service import live_class_service
 from app.services.emotion_predictor import predictor_service
 from app.services.text_emotion_baseline import text_emotion_baseline_service
 from app.services.voice_emotion_baseline import voice_emotion_baseline_service
+from app.websocket.events import emit_lesson_emotion_update
 
 
 router = APIRouter(
@@ -110,10 +111,13 @@ async def batch_emotion_events(
 ) -> EventBatchIngestResponse:
     # Backward compatibility: keep old face-only payload support while accepting the new unified schema.
     if isinstance(payload, EmotionEventBatchRequest):
+        unified_events = [event.model_dump() for event in payload.events]
         result = await emotion_event_analytics_service.ingest_emotion_events(
-            events=[event.model_dump() for event in payload.events],
+            events=unified_events,
             current_user=current_user,
         )
+        for event in unified_events[-25:]:
+            await emit_lesson_emotion_update(event)
         logger.info(
             "Emotion batch ingested (unified) actor=%s inserted=%s skipped=%s",
             current_user.get("email"),
@@ -197,6 +201,8 @@ async def batch_emotion_events(
         events=unified_events,
         current_user=current_user,
     )
+    for event in unified_events[-25:]:
+        await emit_lesson_emotion_update(event)
     logger.info(
         "Emotion batch ingested (face-legacy) actor=%s inserted=%s skipped=%s",
         current_user.get("email"),
@@ -312,6 +318,16 @@ async def detect_text_emotion_for_message(
             }
         ],
         current_user=current_user,
+    )
+    await emit_lesson_emotion_update(
+        {
+            "user_id": payload.userId,
+            "class_id": class_id,
+            "lesson_id": lesson_id,
+            "emotion_label": prediction.emotion,
+            "confidence": prediction.confidence,
+            "timestamp": payload.timestamp,
+        }
     )
     logger.info(
         "Text emotion processed user_id=%s lesson_id=%s session_id=%s live_session_id=%s emotion=%s confidence=%.3f",
@@ -497,6 +513,16 @@ async def detect_voice_emotion_for_feedback(
             }
         ],
         current_user=current_user,
+    )
+    await emit_lesson_emotion_update(
+        {
+            "user_id": payload.userId,
+            "class_id": class_id,
+            "lesson_id": lesson_id,
+            "emotion_label": prediction.emotion,
+            "confidence": prediction.confidence,
+            "timestamp": payload.timestamp,
+        }
     )
 
     return VoiceEmotionResponse(

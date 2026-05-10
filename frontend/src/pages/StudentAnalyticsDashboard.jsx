@@ -4,6 +4,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, LineChart, L
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import { getChartColor, CHART_GRID_COLOR, CHART_AXIS_COLOR } from "../chartColors";
 import PowerBIDashboard from "../powerbi/PowerBIEmbed";
+import { fetchPowerBIEmbedToken, fetchStudentAnalytics } from "../services/api";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -25,12 +26,8 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
     async function fetchData() {
       setIsLoading(true);
       try {
-        // Fetch Power BI token if available
         try {
-          const tokenRes = await fetch('/api/analytics/powerbi/embed-token', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-          });
-          const tokenData = await tokenRes.json();
+          const tokenData = await fetchPowerBIEmbedToken();
           if (tokenData.accessToken) {
             setPowerBIToken(tokenData);
           }
@@ -38,17 +35,7 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
           console.warn("Power BI not configured", e);
         }
 
-        // Fetch student drill-down Recharts fallback data
-        let url = `/api/analytics/student/${studentId}/history?`;
-        if (classId) url += `class_id=${classId}&`;
-        if (lessonId) url += `lesson_id=${lessonId}`;
-
-        const res = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        
-        if (!res.ok) throw new Error("Failed to load student analytics");
-        const json = await res.json();
+        const json = await fetchStudentAnalytics(studentId, { classId, lessonId });
         setData(json);
       } catch (err) {
         setError(err.message);
@@ -71,20 +58,20 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6" role="presentation" onClick={onClose}>
-      <div className="bg-slate-50 w-full max-w-7xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()}>
+      <div className="safe-card w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-950/70 border-b border-slate-700 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+            <div className="w-10 h-10 bg-indigo-500/15 rounded-full flex items-center justify-center text-indigo-300 border border-indigo-400/30">
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-800 leading-tight">{studentName || studentId}</h2>
-              <p className="text-sm text-slate-500 font-medium">Individual Emotion Analytics</p>
+              <h2 className="text-xl font-bold text-slate-50 leading-tight">{studentName || studentId}</h2>
+              <p className="text-sm text-slate-400 font-medium">Individual Emotion Analytics</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors">
+          <button onClick={onClose} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -94,10 +81,10 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-64">
               <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
-              <p className="text-slate-500 font-medium">Aggregating historical data...</p>
+              <p className="text-slate-400 font-medium">Aggregating historical data...</p>
             </div>
           ) : error ? (
-            <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 font-medium">
+            <div className="bg-red-950/40 text-red-200 p-4 rounded-xl border border-red-500/40 font-medium">
               Error: {error}
             </div>
           ) : data ? (
@@ -109,34 +96,35 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
                   reportId={powerBIToken?.reportId}
                   embedUrl={powerBIToken?.embedUrl}
                   accessToken={powerBIToken?.accessToken}
+                  tokenType={powerBIToken?.tokenType}
                 />
               </div>
 
               {/* Recharts Fallback (Always rendered below PBI for this demo/requirement) */}
               <div className="mb-4">
-                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-50 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-indigo-500" /> Recharts Fallback Analytics
                 </h3>
-                <p className="text-sm text-slate-500">Live synchronized UI mirroring Power BI capabilities.</p>
+                <p className="text-sm text-slate-400">Live synchronized UI mirroring Power BI capabilities.</p>
               </div>
 
               {/* A. Student Overview */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-sm text-slate-500 font-medium mb-1">Engagement Score</p>
-                  <p className="text-2xl font-bold text-indigo-600">{Number(data.engagement).toFixed(1)}</p>
+                <div className="safe-card-muted p-4">
+                  <p className="text-sm text-slate-400 font-medium mb-1">Engagement Score</p>
+                  <p className="text-2xl font-bold text-indigo-300">{Number(data.engagement).toFixed(1)}</p>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-sm text-slate-500 font-medium mb-1">Dominant Emotion</p>
-                  <p className="text-2xl font-bold text-slate-800 capitalize">{data.dominant_emotion}</p>
+                <div className="safe-card-muted p-4">
+                  <p className="text-sm text-slate-400 font-medium mb-1">Dominant Emotion</p>
+                  <p className="text-2xl font-bold text-slate-50 capitalize">{data.dominant_emotion}</p>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-sm text-slate-500 font-medium mb-1">Attention Score</p>
-                  <p className="text-2xl font-bold text-emerald-600">{Number(data.attention).toFixed(1)}%</p>
+                <div className="safe-card-muted p-4">
+                  <p className="text-sm text-slate-400 font-medium mb-1">Attention Score</p>
+                  <p className="text-2xl font-bold text-emerald-300">{Number(data.attention).toFixed(1)}%</p>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-sm text-slate-500 font-medium mb-1">Completion</p>
-                  <p className="text-2xl font-bold text-blue-600">{Number(data.completion).toFixed(1)}%</p>
+                <div className="safe-card-muted p-4">
+                  <p className="text-sm text-slate-400 font-medium mb-1">Completion</p>
+                  <p className="text-2xl font-bold text-blue-300">{Number(data.completion).toFixed(1)}%</p>
                 </div>
               </div>
 
@@ -211,13 +199,13 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
 
               {/* E. SESSION HISTORY TABLE & F. VOICE FEEDBACK TRANSCRIPTS */}
               <Card className="overflow-hidden">
-                <CardHeader className="bg-white border-b border-slate-100">
+                <CardHeader className="bg-slate-950/60 border-b border-slate-700">
                   <CardTitle className="text-base">Session History & Transcripts</CardTitle>
                 </CardHeader>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                      <tr className="bg-slate-950/80 text-slate-300 text-xs uppercase tracking-wider">
                         <th className="px-4 py-3 font-semibold">Date</th>
                         <th className="px-4 py-3 font-semibold">Lesson Name</th>
                         <th className="px-4 py-3 font-semibold text-center">Duration</th>
@@ -226,19 +214,19 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
                         <th className="px-4 py-3 font-semibold">Transcript</th>
                       </tr>
                     </thead>
-                    <tbody className="text-sm divide-y divide-slate-100">
+                    <tbody className="text-sm divide-y divide-slate-800">
                       {data.session_history.map((row, i) => (
-                        <tr key={i} className="hover:bg-indigo-50/30 transition-colors cursor-pointer">
-                          <td className="px-4 py-3 font-medium text-slate-700 whitespace-nowrap">{formatDateTime(row.date)}</td>
-                          <td className="px-4 py-3 text-slate-600">{row.lesson_name}</td>
-                          <td className="px-4 py-3 text-center font-medium text-slate-700">{row.duration}m</td>
+                        <tr key={i} className="hover:bg-indigo-500/10 transition-colors cursor-pointer">
+                          <td className="px-4 py-3 font-medium text-slate-200 whitespace-nowrap">{formatDateTime(row.date)}</td>
+                          <td className="px-4 py-3 text-slate-300">{row.lesson_name}</td>
+                          <td className="px-4 py-3 text-center font-medium text-slate-200">{row.duration}m</td>
                           <td className="px-4 py-3 text-center">
-                            <span className="inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-700 rounded-md text-xs font-bold capitalize">
+                            <span className="inline-flex items-center px-2 py-1 bg-indigo-500/15 text-indigo-200 border border-indigo-400/30 rounded-md text-xs font-bold capitalize">
                               {row.dominant_emotion}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-center font-semibold text-emerald-600">{row.attention}%</td>
-                          <td className="px-4 py-3 text-slate-500 italic">"{row.transcript_summary}"</td>
+                          <td className="px-4 py-3 text-center font-semibold text-emerald-300">{row.attention}%</td>
+                          <td className="px-4 py-3 text-slate-400 italic">"{row.transcript_summary}"</td>
                         </tr>
                       ))}
                     </tbody>
@@ -247,15 +235,15 @@ export default function StudentAnalyticsDashboard({ studentId, studentName, clas
               </Card>
 
               {/* G. AI LEARNING INSIGHTS */}
-              <Card className="bg-gradient-to-r from-indigo-50 to-blue-50 border-indigo-100">
+              <Card className="bg-gradient-to-r from-indigo-950/60 to-blue-950/50 border-indigo-500/20">
                 <CardContent className="p-6">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm text-indigo-500 shrink-0">
+                    <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center shadow-sm text-indigo-300 shrink-0 border border-slate-700">
                       <AlertTriangle className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800 text-lg mb-2">AI Learning Insights</h4>
-                      <p className="text-slate-600">
+                      <h4 className="font-bold text-slate-50 text-lg mb-2">AI Learning Insights</h4>
+                      <p className="text-slate-300">
                         Student engagement is improving. <strong>Interest increased by 22%</strong> over the last 3 sessions.
                         However, confusion spikes were detected during the <em>{data.session_history[0]?.lesson_name || "Database"}</em> lessons.
                         Recommendation: Assign revision material on this topic.

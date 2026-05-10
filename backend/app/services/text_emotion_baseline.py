@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-
 
 TRAINING_DATA: list[tuple[str, str]] = [
     ("this is really interesting and I want to learn more", "interest"),
@@ -48,11 +44,18 @@ class TextEmotionBaselineService:
     """
 
     def __init__(self) -> None:
-        self._pipeline: Pipeline | None = None
+        self._pipeline = None
 
-    def _get_pipeline(self) -> Pipeline:
+    def _get_pipeline(self):
         if self._pipeline is not None:
             return self._pipeline
+
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.pipeline import Pipeline
+        except ImportError:
+            return None
 
         texts = [text for text, _ in TRAINING_DATA]
         labels = [label for _, label in TRAINING_DATA]
@@ -66,6 +69,28 @@ class TextEmotionBaselineService:
         self._pipeline.fit(texts, labels)
         return self._pipeline
 
+    @staticmethod
+    def _keyword_fallback(message: str) -> TextEmotionPrediction:
+        normalized = message.lower()
+        keyword_map = {
+            "confusion": ("confused", "confusing", "don't understand", "do not understand", "explain", "lost", "stuck"),
+            "boredom": ("boring", "bored", "slow", "repetitive", "dull", "losing focus"),
+            "stress": ("stress", "stressed", "anxious", "overwhelmed", "frustrating", "pressure"),
+            "interest": ("interesting", "great", "useful", "excited", "understand", "helpful"),
+        }
+        for emotion, keywords in keyword_map.items():
+            if any(keyword in normalized for keyword in keywords):
+                return TextEmotionPrediction(
+                    emotion=emotion,
+                    confidence=0.62,
+                    suggestion=SUGGESTION_BY_EMOTION.get(emotion, SUGGESTION_BY_EMOTION["neutral"]),
+                )
+        return TextEmotionPrediction(
+            emotion="neutral",
+            confidence=0.55,
+            suggestion=SUGGESTION_BY_EMOTION["neutral"],
+        )
+
     def predict(self, text: str) -> TextEmotionPrediction:
         message = (text or "").strip()
         if not message:
@@ -76,6 +101,9 @@ class TextEmotionBaselineService:
             )
 
         model = self._get_pipeline()
+        if model is None:
+            return self._keyword_fallback(message)
+
         probabilities = model.predict_proba([message])[0]
         labels = list(model.classes_)
         best_index = max(range(len(probabilities)), key=lambda idx: probabilities[idx])

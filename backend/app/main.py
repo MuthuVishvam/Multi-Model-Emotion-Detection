@@ -12,6 +12,7 @@ from socketio import ASGIApp
 
 from app.config import settings
 from app.database.mongodb import close_mongo_connection, init_mongo_connection, ping_database
+from app.db import ensure_platform_indexes
 from app.routers import (
     admin as admin_routes,
     analytics as analytics_routes,
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting MELD backend")
     init_mongo_connection()
     await ping_database()
+    await ensure_platform_indexes()
     logger.info("Database connection established")
 
     yield

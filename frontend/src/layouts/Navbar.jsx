@@ -1,4 +1,4 @@
-import { Menu, Bell, User, LogOut, Settings, X, Moon, Sun } from "lucide-react";
+import { Menu, Bell, User, LogOut, Settings, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function Navbar({ user, unreadCount, onLogout }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
 
   if (!user) return null;
 
@@ -28,13 +27,6 @@ export default function Navbar({ user, unreadCount, onLogout }) {
         </div>
 
         <div className="flex items-center gap-4 sm:gap-6">
-          <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 text-slate-400 hover:text-white transition-colors"
-          >
-            {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-
           <Link to="/notifications" className="relative p-2 text-slate-400 hover:text-white transition-colors">
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
