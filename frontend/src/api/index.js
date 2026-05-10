@@ -587,6 +587,49 @@ export async function fetchLiveModalityAnalytics(liveSessionId, modality, filter
   return apiRequest(`/analytics/live/${liveSessionId}/${modality}${query}`, "GET", null, token);
 }
 
+function buildEmotionWorkspaceQuery(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.classId) params.set("class_id", filters.classId);
+  if (filters.lessonId) params.set("lesson_id", filters.lessonId);
+  if (filters.studentId) params.set("student_id", filters.studentId);
+  if (filters.startAt) params.set("start_at", filters.startAt);
+  if (filters.endAt) params.set("end_at", filters.endAt);
+  if (Array.isArray(filters.emotions) && filters.emotions.length > 0) {
+    params.set("emotions", filters.emotions.join(","));
+  }
+  if (filters.confidenceThreshold !== undefined && filters.confidenceThreshold !== null) {
+    params.set("confidence_threshold", String(filters.confidenceThreshold));
+  }
+  if (filters.reportType) params.set("report_type", filters.reportType);
+  if (filters.format) params.set("format", filters.format);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function fetchEmotionWorkspaceAnalytics(filters = {}) {
+  const token = getStoredToken();
+  return apiRequest(`/api/emotions/analytics${buildEmotionWorkspaceQuery(filters)}`, "GET", null, token);
+}
+
+export async function fetchEmotionWorkspaceReport(filters = {}) {
+  const token = getStoredToken();
+  return apiRequest(`/api/emotions/report${buildEmotionWorkspaceQuery(filters)}`, "GET", null, token);
+}
+
+export async function fetchEmotionWorkspaceSummary(filters = {}) {
+  const token = getStoredToken();
+  return apiRequest(`/api/emotions/summary${buildEmotionWorkspaceQuery(filters)}`, "GET", null, token);
+}
+
+export async function fetchEmotionWorkspaceLive(filters = {}) {
+  const token = getStoredToken();
+  return apiRequest(`/api/emotions/live${buildEmotionWorkspaceQuery(filters)}`, "GET", null, token);
+}
+
+export function buildEmotionWorkspaceExportUrl(filters = {}) {
+  return buildApiUrl(`/api/emotions/export${buildEmotionWorkspaceQuery(filters)}`);
+}
+
 export async function fetchLiveStudentsAnalytics(liveSessionId, filters = {}) {
   const token = localStorage.getItem("token") || "";
   const query = buildLiveAnalyticsQuery(filters);
