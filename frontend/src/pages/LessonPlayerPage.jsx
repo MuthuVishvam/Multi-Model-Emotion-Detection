@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   apiRequest,
+  buildApiUrl,
   fetchClassLessons,
   fetchLessonComments,
   fetchLessonVoiceFeedback,
@@ -71,7 +72,7 @@ function extractYouTubeVideoId(urlString) {
       if (url.pathname === "/watch") {
         return url.searchParams.get("v") || "";
       }
-      if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/")) {
+      if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/live/")) {
         return url.pathname.split("/").filter(Boolean)[1] || "";
       }
     }
@@ -87,6 +88,7 @@ function inferLessonMedia(url) {
     return { type: "none" };
   }
 
+  const sourceUrl = String(url || "").trim();
   const youtubeId = extractYouTubeVideoId(url);
   if (youtubeId) {
     return {
@@ -95,12 +97,13 @@ function inferLessonMedia(url) {
     };
   }
 
-  const lower = url.toLowerCase();
-  if (/\.(mp4|webm|ogg)(\?|#|$)/.test(lower)) {
-    return { type: "video", src: url };
+  const src = sourceUrl.startsWith("/") ? buildApiUrl(sourceUrl) : sourceUrl;
+  const lower = sourceUrl.toLowerCase();
+  if (/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/.test(lower)) {
+    return { type: "video", src };
   }
 
-  return { type: "link", src: url };
+  return { type: "link", src };
 }
 
 function buildTimelineRows(lesson) {
@@ -942,6 +945,22 @@ export default function LessonPlayerPage({ user }) {
                 {lessonStarted && selectedMedia.type === "none" && (
                   <div className="text-slate-400 text-sm">
                     No media URL is attached to this lesson yet.
+                  </div>
+                )}
+
+                {lessonStarted && selectedMedia.type === "link" && (
+                  <div className="flex flex-col items-center justify-center gap-4 p-8 text-center">
+                    <p className="text-slate-300 text-sm">
+                      This lesson uses a link that cannot be embedded in the player.
+                    </p>
+                    <a
+                      className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold rounded-lg transition-colors"
+                      href={selectedMedia.src}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open lesson link
+                    </a>
                   </div>
                 )}
               </div>

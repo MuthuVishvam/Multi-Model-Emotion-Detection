@@ -1,4 +1,4 @@
-export default function Card({ className = "", children, onClick }) {
+export function Card({ className = "", children, onClick }) {
   return (
     <div 
       onClick={onClick}
@@ -8,6 +8,8 @@ export default function Card({ className = "", children, onClick }) {
     </div>
   );
 }
+
+export default Card;
 
 export function CardHeader({ className = "", children }) {
   return (

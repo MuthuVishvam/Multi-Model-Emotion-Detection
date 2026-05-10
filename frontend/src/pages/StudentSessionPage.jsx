@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 
-import { apiRequest } from "../services/api";
+import { apiRequest, buildApiUrl } from "../services/api";
 
 const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
 const FACE_CAPTURE_INTERVAL_MS = 4000;
@@ -96,7 +96,7 @@ function extractYouTubeVideoId(urlString) {
       if (url.pathname === "/watch") {
         return url.searchParams.get("v") || "";
       }
-      if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/")) {
+      if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/live/")) {
         return url.pathname.split("/").filter(Boolean)[1] || "";
       }
     }
@@ -112,6 +112,7 @@ function inferLessonMedia(url) {
     return { type: "none" };
   }
 
+  const sourceUrl = String(url || "").trim();
   const youtubeId = extractYouTubeVideoId(url);
   if (youtubeId) {
     return {
@@ -120,12 +121,13 @@ function inferLessonMedia(url) {
     };
   }
 
-  const lower = url.toLowerCase();
-  if (/\.(mp4|webm|ogg)(\?|#|$)/.test(lower)) {
-    return { type: "video", src: url };
+  const src = sourceUrl.startsWith("/") ? buildApiUrl(sourceUrl) : sourceUrl;
+  const lower = sourceUrl.toLowerCase();
+  if (/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/.test(lower)) {
+    return { type: "video", src };
   }
 
-  return { type: "link", src: url };
+  return { type: "link", src };
 }
 
 function getTopScore(scores) {

@@ -1,49 +1,70 @@
 from contextlib import asynccontextmanager
 import logging
+import os
 from pathlib import Path
-from time import perf_counter
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from socketio import ASGIApp
 
 from app.config import settings
-from app.db.indexes import ensure_platform_indexes
-from app.routes import admin_routes, analytics_routes, auth_routes, class_routes, emotion_routes, lesson_routes
-from app.routers import attention, dashboard, feedback, health, live_classes, notifications, reports, sessions, users
-from app.services.webrtc_service import sio
-from db.mongo import close_mongo_connection, init_mongo_connection, ping_database
+from app.database.mongodb import close_mongo_connection, init_mongo_connection, ping_database
+from app.routers import (
+    admin as admin_routes,
+    analytics as analytics_routes,
+    attention,
+    auth as auth_routes,
+    classes as class_routes,
+    dashboard,
+    emotion as emotion_routes,
+    feedback,
+    health,
+    lessons as lesson_routes,
+    live_classes,
+    notifications,
+    reports,
+    sessions,
+    users,
+)
+from app.websocket.events import setup_socketio
 
 
-resolved_log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+load_dotenv()
+
 logging.basicConfig(
-    level=resolved_log_level,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("emotion_backend")
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+UPLOADS_DIR = BACKEND_ROOT / "uploads"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting MELD backend")
     init_mongo_connection()
     await ping_database()
-    await ensure_platform_indexes()
-    logger.info("DB connected")
-    try:
-        yield
-    finally:
-        await close_mongo_connection()
-        logger.info("DB disconnected")
+    logger.info("Database connection established")
+
+    yield
+
+    await close_mongo_connection()
+    logger.info("Backend shutdown complete")
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    description="MELD - AI-powered learning platform API",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
-uploads_dir = Path(__file__).resolve().parents[1] / "uploads"
-uploads_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+sio = setup_socketio(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,31 +75,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.middleware("http")
-async def request_logging_middleware(request: Request, call_next):
-    start = perf_counter()
-    try:
-        response = await call_next(request)
-    except Exception:
-        logger.exception("Unhandled error during request method=%s path=%s", request.method, request.url.path)
-        raise
-
-    duration_ms = round((perf_counter() - start) * 1000.0, 2)
-    logger.info(
-        "request method=%s path=%s status=%s duration_ms=%.2f",
-        request.method,
-        request.url.path,
-        response.status_code,
-        duration_ms,
-    )
-    return response
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.warning("Validation error method=%s path=%s errors=%s", request.method, request.url.path, exc.errors())
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
 @app.exception_handler(HTTPException)
@@ -117,3 +115,15 @@ app.include_router(analytics_routes.router)
 app.include_router(feedback.router)
 
 application = ASGIApp(sio, other_asgi_app=app)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:application",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", settings.port)),
+        reload=os.getenv("RELOAD", "1") == "1",
+        log_level=settings.log_level.lower(),
+    )

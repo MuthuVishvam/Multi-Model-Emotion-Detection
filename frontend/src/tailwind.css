@@ -1,16 +1,6 @@
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
-
-@theme {
-  --color-slate-850: #151e2e;
-  --color-slate-900: #0f172a;
-  --color-slate-950: #020617;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  
-  --font-sans: "Inter", "Manrope", system-ui, -apple-system, sans-serif;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer utilities {
   .glass-panel {
