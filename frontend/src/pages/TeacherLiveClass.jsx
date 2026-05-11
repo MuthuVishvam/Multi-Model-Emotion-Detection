@@ -274,11 +274,9 @@ export default function TeacherLiveClass({ user }) {
 
     socket.on("connect", () => {
       setSocketState("connected");
-      socket.emit("join_room", {
-        room_id: roomId,
-        live_session_id: liveSessionId,
+      socket.emit("teacher-join", {
+        sessionId: liveSessionId,
         user_id: user.id,
-        role: "teacher",
         username: userDisplayName,
       });
     });
@@ -300,6 +298,26 @@ export default function TeacherLiveClass({ user }) {
       }
     });
 
+    socket.on("student-joined", (payload) => {
+      setStudents((current) => upsertParticipant(current, { ...payload, sid: payload.sid || payload.socketId, role: "student" }));
+      if (streamingRef.current && localStreamRef.current) {
+        void createPeerConnection(payload.sid || payload.socketId);
+      }
+    });
+
+    socket.on("dashboard-update", (payload) => {
+      const nextStudents = Array.isArray(payload?.students)
+        ? payload.students.map((item) => ({ ...item, sid: item.sid || item.socketId, username: item.username || item.name, role: "student" }))
+        : [];
+      setStudents(nextStudents);
+      setOverall((current) => ({
+        ...(current || {}),
+        active_students_count: Number(payload?.active_students_count ?? nextStudents.length),
+        dominant_emotion: payload?.dominant_emotion || payload?.dominantEmotion || "unknown",
+        low_attention_alerts: Number(payload?.low_attention_alerts ?? payload?.lowAttentionCount ?? 0),
+      }));
+    });
+
     socket.on("user_left", ({ sid }) => {
       setStudents((current) => current.filter((item) => item.sid !== sid));
       setStudentEmotions((current) => {
@@ -314,12 +332,25 @@ export default function TeacherLiveClass({ user }) {
     socket.on("webrtc_ice_candidate", (payload) => void handleIceCandidate(payload));
 
     socket.on("student_emotion", (payload) => {
+      const studentSid = payload.student_sid || payload.sid || payload.socketId;
       setStudentEmotions((current) => ({
         ...current,
-        [payload.student_sid]: {
+        [studentSid]: {
           emotion: payload.emotion,
           confidence: Number(payload.confidence || 0),
           username: payload.student_username,
+        },
+      }));
+    });
+
+    socket.on("live-emotion-update", (payload) => {
+      const studentSid = payload.student_sid || payload.sid || payload.socketId;
+      setStudentEmotions((current) => ({
+        ...current,
+        [studentSid]: {
+          emotion: payload.emotion,
+          confidence: Number(payload.confidence || 0),
+          username: payload.student_username || payload.name,
         },
       }));
     });

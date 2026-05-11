@@ -55,6 +55,7 @@ export default function LiveClassRoom({ user }) {
   
   const leaveInCleanupRef = useRef(false);
   const manualFaceInputRef = useRef(null);
+  const lastEmotionSentRef = useRef("");
   
   const socketRef = useRef(null);
   const peerConnectionRef = useRef(null);
@@ -296,12 +297,10 @@ export default function LiveClassRoom({ user }) {
 
     socket.on("connect", () => {
       setSocketState("connected");
-      socket.emit("join_room", {
-        room_id: roomId,
-        live_session_id: liveSessionId,
-        user_id: user.id,
-        role: "student",
-        username: userDisplayName,
+      socket.emit("student-join", {
+        sessionId: liveSessionId,
+        studentId: user.id,
+        name: userDisplayName,
       });
     });
 
@@ -347,7 +346,35 @@ export default function LiveClassRoom({ user }) {
 
   useEffect(() => {
     leaveInCleanupRef.current = isJoined;
+    if (!isJoined) {
+      lastEmotionSentRef.current = "";
+    }
   }, [isJoined]);
+
+  useEffect(() => {
+    if (!liveSessionId || !socketRef.current?.connected || !emotionTracker.lastEmotion) {
+      return;
+    }
+
+    const nextEmotionKey = `${emotionTracker.lastEmotion}:${Number(emotionTracker.lastConfidence || 0).toFixed(3)}`;
+    if (lastEmotionSentRef.current === nextEmotionKey) {
+      return;
+    }
+
+    lastEmotionSentRef.current = nextEmotionKey;
+    const attention = emotionTracker.faceStats?.faceDetected
+      ? Math.max(0.4, Number(emotionTracker.lastConfidence || 0))
+      : 0.2;
+    socketRef.current.emit("emotion-update", {
+      sessionId: liveSessionId,
+      studentId: userId,
+      name: userDisplayName,
+      emotion: emotionTracker.lastEmotion,
+      attention,
+      confidence: Number(emotionTracker.lastConfidence || 0),
+      timestamp: Date.now(),
+    });
+  }, [emotionTracker.faceStats?.faceDetected, emotionTracker.lastConfidence, emotionTracker.lastEmotion, liveSessionId, socketState, userDisplayName, userId]);
 
   useEffect(() => () => {
     if (leaveInCleanupRef.current && liveSessionId) {

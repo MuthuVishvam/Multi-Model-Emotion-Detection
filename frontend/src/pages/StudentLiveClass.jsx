@@ -340,12 +340,10 @@ export default function StudentLiveClass({ user }) {
 
     socket.on("connect", () => {
       setSocketState("connected");
-      socket.emit("join_room", {
-        room_id: roomId,
-        live_session_id: liveSessionId,
-        user_id: user.id,
-        role: "student",
-        username: userDisplayName,
+      socket.emit("student-join", {
+        sessionId: liveSessionId,
+        studentId: user.id,
+        name: userDisplayName,
       });
     });
 
@@ -456,11 +454,24 @@ export default function StudentLiveClass({ user }) {
     }
 
     lastEmotionSentRef.current = nextEmotionKey;
+    const attention = emotionTracker.faceStats?.faceDetected
+      ? Math.max(0.4, Number(emotionTracker.lastConfidence || 0))
+      : 0.2;
+    socketRef.current.emit("emotion-update", {
+      sessionId: liveSessionId,
+      studentId: user?.id || "",
+      name: userDisplayName,
+      emotion: emotionTracker.lastEmotion,
+      attention,
+      confidence: Number(emotionTracker.lastConfidence || 0),
+      timestamp: Date.now(),
+    });
     socketRef.current.emit("student_local_emotion", {
       emotion: emotionTracker.lastEmotion,
       confidence: Number(emotionTracker.lastConfidence || 0),
+      attention,
     });
-  }, [emotionTracker.lastConfidence, emotionTracker.lastEmotion, liveSessionId, socketState]);
+  }, [emotionTracker.faceStats?.faceDetected, emotionTracker.lastConfidence, emotionTracker.lastEmotion, liveSessionId, socketState, user?.id, userDisplayName]);
 
   useEffect(() => {
     if (!meetingEnded) {

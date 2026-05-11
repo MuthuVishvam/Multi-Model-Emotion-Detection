@@ -21,7 +21,7 @@ export function getRealtimeBaseUrl() {
 }
 
 export function buildLiveRoomId(liveSessionId) {
-  return `live_${String(liveSessionId || "").trim()}`;
+  return String(liveSessionId || "").trim();
 }
 
 export function getUserDisplayName(user) {

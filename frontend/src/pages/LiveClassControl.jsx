@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import io from "socket.io-client";
 
 import {
   endLiveClass,
@@ -8,6 +9,7 @@ import {
   fetchMyClasses,
   startLiveClass,
 } from "../services/api";
+import { getRealtimeBaseUrl } from "../services/realtime";
 
 const ACTIVE_LIVE_STORAGE_KEY = "meld_active_live_session_id";
 
@@ -196,6 +198,28 @@ export default function LiveClassControl() {
       void refreshOverall(activeSessionId);
     }, 10000);
     return () => window.clearInterval(timer);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    const sessionId = String(activeSessionId || "").trim();
+    if (!sessionId) {
+      return undefined;
+    }
+
+    const socket = io(getRealtimeBaseUrl(), { transports: ["websocket"] });
+    socket.on("connect", () => {
+      socket.emit("teacher-join", { sessionId });
+    });
+    socket.on("dashboard-update", (payload) => {
+      setOverall((current) => ({
+        ...(current || {}),
+        active_students_count: Number(payload?.active_students_count ?? payload?.students?.length ?? 0),
+        dominant_emotion: payload?.dominant_emotion || payload?.dominantEmotion || "unknown",
+        low_attention_alerts: Number(payload?.low_attention_alerts ?? payload?.lowAttentionCount ?? 0),
+      }));
+    });
+
+    return () => socket.disconnect();
   }, [activeSessionId]);
 
   return (

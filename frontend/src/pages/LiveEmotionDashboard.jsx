@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import io from "socket.io-client";
 import {
   Bar,
   BarChart,
@@ -24,6 +25,7 @@ import EmotionFilterBar, {
   buildEmotionFilterOptions,
   formatEmotionLabel,
 } from "../components/EmotionFilterBar";
+import { getRealtimeBaseUrl } from "../services/realtime";
 
 function toDistributionData(percentages = {}, counts = {}) {
   const keys = Object.keys(percentages || {});
@@ -142,6 +144,42 @@ export default function LiveEmotionDashboard() {
       void loadAnalytics(selectedEmotion ? { emotionLabel: selectedEmotion } : {});
     }, 10000);
     return () => window.clearInterval(timer);
+  }, [liveSessionId, selectedEmotion]);
+
+  useEffect(() => {
+    const sessionId = String(liveSessionId || "").trim();
+    if (!sessionId) {
+      return undefined;
+    }
+
+    const socket = io(getRealtimeBaseUrl(), { transports: ["websocket"] });
+    socket.on("connect", () => {
+      socket.emit("teacher-join", { sessionId });
+    });
+    socket.on("dashboard-update", (payload) => {
+      setOverall((current) => ({
+        ...(current || {}),
+        active_students_count: Number(payload?.active_students_count ?? payload?.students?.length ?? 0),
+        dominant_emotion: payload?.dominant_emotion || payload?.dominantEmotion || "unknown",
+        low_attention_alerts: Number(payload?.low_attention_alerts ?? payload?.lowAttentionCount ?? 0),
+      }));
+      if (Array.isArray(payload?.students)) {
+        setStudents(payload.students.map((student) => ({
+          user_id: student.studentId || student.user_id || student.socketId,
+          student_name: student.name || student.username || "Student",
+          dominant_emotion: student.emotion || "unknown",
+          attention_state: student.lowAttention ? "low_attention" : "focused",
+          attention_state_percentages: {
+            focused: student.lowAttention ? 0 : 100,
+          },
+        })));
+      }
+    });
+    socket.on("live-emotion-update", () => {
+      void loadAnalytics(selectedEmotion ? { emotionLabel: selectedEmotion } : {});
+    });
+
+    return () => socket.disconnect();
   }, [liveSessionId, selectedEmotion]);
 
   return (
